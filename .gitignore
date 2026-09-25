@@ -39,6 +39,9 @@
 *.out
 *.app
 
+# ROOT files
+*.root
+
 # Build directories
 build/
 Build/
@@ -66,4 +69,13 @@ vcpkg_installed/
 
 # test output & cache
 Testing/
+Latest_Skims/ROOT_Files/
+Latest_Skims/Text_Files/
+Utility_Scripts/backups/
+Utility_Scripts/PDF_Plots/
+Utility_Scripts/Outputs/
+Header_Files/backups/
+Analysis_Channel/Output_Data/
+Analysis_Channel/PDF_Plots/
+Analysis_Channel/test.txt
 .cache/
