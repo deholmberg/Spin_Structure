@@ -4,7 +4,7 @@
  *
  * Date Created: 9/18/2026
  *
- * Last Modified: 9/22/2026
+ * Last Modified: 9/25/2026
  *
  * Purpose:
  * This program is used to calculate the dilution factors (DF), packing fractions
@@ -13,7 +13,6 @@
  * now...
  *
 ***********************************************************************************/
-
 
 #include "../Header_Files/Binning_Classes.h"
 
@@ -75,6 +74,8 @@ TCanvas* RunPeriodPlots( RunPeriod& RP, int FirstEpoch, int LastEpoch, string Ta
 	thisEpoch.SetEpochValues( Period, Target, Epoch, MissedRuns ); // Read in the runs
 	thisEpoch.CalculateAvgXQ2( Period, Epoch, Target ); // Set the kinematic values for every bin
 	thisEpoch.CalculateDF( Period, true, true ); // Calculate DF and PF
+	string outTXT = "Output_Data/All_DF_Data_Epoch_"+to_string(ep);
+	thisEpoch.WriteToCSV( outTXT, Period, " " ); // Writes data to a text or CSV file
 
 	//thisEpoch.Print();
 
@@ -407,6 +408,7 @@ TCanvas* Linearity_DF_PF( string Target="NH3" ){
 
     return c;
 }
+
 
 void Test(){
 

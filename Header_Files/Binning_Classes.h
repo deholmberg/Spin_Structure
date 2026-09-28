@@ -2000,8 +2000,8 @@ class Bin{
 		object += to_string(Input_Loop.getN0())+"	"+to_string(Input_Loop.getFC0());
 		return object;
 	}
-	void Print() const{
-	    if( Q2_Avg_All > 0 && X_Avg_All > 0 ){
+	void Print( bool forcePrint=false ) const{
+	    if( (Q2_Avg_All > 0 && X_Avg_All > 0) || forcePrint ){
 		//cout << "=================================== Bin: Q^2 = "<<Q2_Mid <<" X = "<< X_Mid <<" ===================================\n";
 		cout << "======== Bin: "<<Q2_Min <<" < Q2 < "<< Q2_Max <<", "<< X_Min <<" < X < "<< X_Max <<" ========\n";
 		cout << "Statistics-Weighted Bins Per Target Type:\n";
@@ -2079,8 +2079,19 @@ vector<vector<Bin>> SetBinWidths(){
 	        stringstream sin(line);
 		//double xbin, Q2bin, W2, Q2, xmid, Q2min, Q2max, Df_NH3, Err_Df_NH3, Q2_avg, W, nu, y, Eprime, theta, eps, D, eta, F1, F2, R, A1, A2, g1, g2;
 		//sin >> xbin>>Q2bin>>W2>>Q2>>xmid>>Q2min>>Q2max>>Df_NH3>>Err_Df_NH3>>Q2_avg>>W>>nu>>y>>Eprime>>theta>>eps>>D>>eta>>F1>>F2>>R>>A1>>A2>>g1>>g2;
-		double Q2min, Q2max, qmid, Q2avg, Xmin, Xmax, xmid, Xavg,  W2,  F1,  F2,  R,  A1,  A2,  g1,  g2, D, eta;
-		sin >> Q2min >> Q2max >> qmid >> Q2avg >> Xmin >> Xmax >> xmid >> Xavg >>  W2 >>  F1 >>  F2 >>  R >>  A1 >>  A2 >>  g1 >>  g2 >> D >> eta;
+		//double Q2min, Q2max, qmid, Q2avg, Xmin, Xmax, xmid, Xavg,  W2,  F1,  F2,  R,  A1,  A2,  g1,  g2, D, eta;
+		//sin >> Q2min >> Q2max >> qmid >> Q2avg >> Xmin >> Xmax >> xmid >> Xavg >>  W2 >>  F1 >>  F2 >>  R >>  A1 >>  A2 >>  g1 >>  g2 >> D >> eta;
+		
+		//Q2,	W2,	x,	F1,	F2,	R,	A1,	A2,	g1,	g2,
+		double Q2, W2, x, F1, F2, R, A1, A2, g1, g2;
+		sin >> Q2 >> W2 >> x >> F1 >> F2 >> R >> A1 >> A2 >> g1 >> g2;
+		// Calculate the other relevant quantities
+	        double Ep = avgBeamEnergy - ( (W2 + Q2 - (nucleon_mass*nucleon_mass)) / (2*nucleon_mass)   ); // Mean scattered energy for this Q2, W2
+        	double theta = 2*asin( sqrt( Q2/(4*avgBeamEnergy*Ep) ) ); // Average scattered angle in radians
+	        double tau = Q2 / (4*nucleon_mass*nucleon_mass*x*x); // tau kinematic variable
+	        double eps = 1.0 / ( 1.0 + 2*(1.0+tau)*pow( tan(theta/2.0),2)  ); // virtual photon polarization epsilon, with theta passed in with radians
+	        double depol = ( 1.0 - (eps*Ep/avgBeamEnergy) ) / ( 1.0 + (eps*R) ); // The depolarization factor
+        	double eta = (eps * sqrt(Q2) ) / ( avgBeamEnergy - (eps*Ep) ); // The eta kinematic variable 
 
 		//double Q2, W2, x, F1, F2, R, A1, A2, g1, g2, D, eta;
 		//sin >> Q2 >> W2 >> x >> F1 >> F2 >> R >> A1 >> A2 >> g1 >> g2 >>D >> eta;
@@ -2089,13 +2100,13 @@ vector<vector<Bin>> SetBinWidths(){
 		//double xmid = x;
 		//double qmid = (Q2min+Q2max) / 2.0;
 
-		double ALL_Theory = D*(A1+eta*A2); // Theoretical value of double spin asymmetry for this bin
+		double ALL_Theory = depol*(A1+eta*A2); // Theoretical value of double spin asymmetry for this bin
 		//cout << qmid <<" "<< xmid <<" "<< ALL_Theory << endl;
 		for(size_t i=0; i<AllBins.size(); i++){ // Q2 bin loop
 		    for(size_t j=0; j<AllBins[i].size(); j++){
-		        if( AllBins[i][j].IsInBin( qmid, xmid )  ){
+		        if( AllBins[i][j].IsInBin( Q2, x )  ){
 		            AllBins[i][j].SetAllTheory( ALL_Theory, "NH3" );
-			    AllBins[i][j].SetKinematicFactors( D, eta, A1, A2, "NH3" );
+			    AllBins[i][j].SetKinematicFactors( depol, eta, A1, A2, "NH3" );
 			    //AllBins[i][j].SetAllTheory( ALL_Theory_ND3, "ND3" );
 			    // Placeholder for any future ND3 incorporation
 		        }
@@ -3415,10 +3426,10 @@ class DataSet{
 	    else cout << "Foil Counts: NF = "<< NF <<", FCF = "<< FCF << endl;
 
 	}
-	void Print() const{
+	void Print( bool forcePrint=false ) const{
 	    for(size_t i=0; i<AllBins.size(); i++){
 	 	for(size_t j=0; j<AllBins[i].size(); j++){
-		    AllBins[i][j].Print();
+		    AllBins[i][j].Print( forcePrint );
 		}
 	    }    
 	}
@@ -3435,109 +3446,22 @@ class DataSet{
 	    }    
 	}
 
-	void WriteToCSV(string outFilePath, string Period, bool useScaling=true, bool usePseudoData=true ){ // Creates comma delimited file
-	    string outPath = outFilePath + ".csv";
-	    ofstream fout(outPath);
-	    if( !fout.fail() ){
-		// Write the titles
-		fout<<"Bin_Q2,Bin_X,";
-		fout<<"DF_NH3,Err_DF_NH3,PF_bath_NH3,ErrPF_bath_NH3,PF_cell_NH3,ErrPF_cell_NH3,";
-		fout<<"FC_total,N_NH3,N_C,N_CH2,N_ET,N_F,N_CD2,FC_NH3,FC_C,FC_CH2,FC_ET,FC_F,FC_CD2\n";
-
-		//fout<<"normN_normNH3,normN_C,normN_CH2,normN_ET,normN_F,normN_CD2\n";
-		for(size_t i=0; i<AllBins.size(); i++){ // Loop over Q2 bins
-	 	    for(size_t j=0; j<AllBins[i].size(); j++){ // Loop over x bins
-		      if( AllBins[i][j].getDF_NH3() != 0.0 || AllBins[i][j].getDF_ND3() != 0.0 || AllBins[i][j].getDF_FixedPF_NH3() != 0.0 || AllBins[i][j].getDF_FixedPF_ND3() != 0.0 ){
-
-			double qavg = AllBins[i][j].getAvgQ2("All"); double xavg = AllBins[i][j].getAvgX("All");
-			double ETsf = 1;
-			double ratioF = 1; double ratioET = 1; double ratioCD2 = 1; // Ratios that are used if corrections are necessary.
-
-			if( useScaling ) ETsf = ET_Scale_Factor(  AllBins[i][j].getAvgX("ET"), AllBins[i][j].getAvgQ2("ET") );
-			if( usePseudoData ){
-			    if( Period == "Su22" || Period == "Fa22Neg" || Period == "Fa22Pos" ){
-				ratioCD2 = AllBins[i][j].getRatio("CD2");
-				//errCD = (1.0/fCD )*sqrt( ScaleCD2 *scale_nCD  + (pow(scale_nCD /ScaleCD2 ,2))*pow(ScaleCD2err ,2) );
-			    }
-			    // This is a separate check from above
-			    if( Period == "Fa22Pos" ){
-				ratioET = AllBins[i][j].getRatio("Sol");
-				ratioF  = AllBins[i][j].getRatio("Sol");
-				// Overwrite the ET and F errors to propagate errors correctly...
-				//errET = (1.0/fET)*sqrt( ScaleET*scale_nET + (pow(scale_nET/ScaleET,2))*pow(ScaleETerr,2) );
-				//errF  = (1.0/fF )*sqrt( ScaleF *scale_nF  + (pow(scale_nF /ScaleF ,2))*pow(ScaleFerr ,2) );
-			    }
-			}
-
-			fout<<AllBins[i][j].getAvgQ2("All")<<","<<AllBins[i][j].getAvgX("All")<<",";
-			fout<<AllBins[i][j].getDF_NH3()<<","<<AllBins[i][j].getErrDF_NH3()<<",";
-			fout<<AllBins[i][j].getPF_bath_NH3()<<","<<AllBins[i][j].getErrPF_bath_NH3()<<",";
-			fout<<AllBins[i][j].getPF_cell_NH3()<<","<<AllBins[i][j].getErrPF_cell_NH3()<<",";
-
-			fout<<AllBins[i][j].getAllFCt()<<",";
-			fout<<AllBins[i][j].getNt("NH3")<<","<<AllBins[i][j].getNt("C")<<","<<AllBins[i][j].getNt("CH2")<<","<<AllBins[i][j].getNt("ET")*ETsf*ratioET<<",";
-			fout<<AllBins[i][j].getNt("F")*ratioF<<","<<AllBins[i][j].getNt("CD2")*ratioCD2<<",";
-			fout<<AllBins[i][j].getFCt("NH3")<<","<<AllBins[i][j].getFCt("C")<<","<<AllBins[i][j].getFCt("CH2")<<","<<AllBins[i][j].getFCt("ET")<<",";
-			fout<<AllBins[i][j].getFCt("F")<<","<<AllBins[i][j].getFCt("CD2")<<"\n";
-
-		      }
-		    }
-	        }
-		// Now create data output file where each data point at a fixed x is the weighted average over all Q2 bins.
-		// This writes the PF data calculated with a uniform PF across all data
-		/*
-		string xavgPath = outFilePath + "_X_Avg.csv";
-		ofstream foutxavg(xavgPath);
-		foutxavg << "X_Bin,DF_NH3,Err_DF_NH3\n";
-		for( int k=0; k<X_Bin_Bounds.size()-1; k++ ){
-		    double xmid = ( X_Bin_Bounds[k] + X_Bin_Bounds[k+1] ) / 2.0;
-		    double weightedAvgNum = 0; // Numerator used in the weighted average calculation
-		    double weightedAvgDen = 0; // Denominator in weighted average calculation
-		    for( int m=0; m<Q2_Bin_Bounds.size()-1; m++ ){
-			double qmid = ( Q2_Bin_Bounds[m] + Q2_Bin_Bounds[m+1] ) / 2.0;
-			// Now loop over the bins and get the values
-			for( auto vec : AllBins ){
-			    for( auto Bin : vec ){
-				if( Bin.IsInBin( qmid, xmid ) && Bin.getDF_FixedPF_NH3() != 0.0 ){
-				    weightedAvgNum += Bin.getDF_FixedPF_NH3() / pow( Bin.getErrDF_FixedPF_NH3(), 2 );
-				    weightedAvgDen += 1.0 / pow( Bin.getErrDF_FixedPF_NH3(), 2 );
-				}
-			    }
-			}
-		    }
-		    // Now calculate the weighted average
-		    if( weightedAvgDen != 0 ){
-			double waVal = weightedAvgNum / weightedAvgDen;
-			double waErr = sqrt( 1.0 / weightedAvgDen );
-			foutxavg << xmid <<","<< waVal <<","<< waErr << endl;
-		    }
-		}
-		foutxavg.close();
-		*/
-	    }
-	    fout.close();
-	}
-
-	// "dlmtr" is the delimiter, so it can be spaced with whitespace or a comma
-	void WriteToCSV(string outFilePath, string dlmtr, string Period, bool useScaling, bool usePseudoData ){ // Creates comma delimited file
-	    
+	void WriteToCSV(string outFilePath, string Period, string del=",", bool useScaling=true, bool usePseudoData=true ){ // Creates comma delimited file
 	    string outPath;
-	    if( dlmtr == "," ) outPath = outFilePath + ".csv";
+	    if( del == ",") outPath = outFilePath + ".csv";
 	    else outPath = outFilePath + ".txt";
+
 	    ofstream fout(outPath);
 	    if( !fout.fail() ){
 		// Write the titles
-		fout<<"Bin_Q2"<< dlmtr <<"Bin_X"<< dlmtr;
-		fout<<"DF_NH3"<< dlmtr <<"Err_DF_NH3"<< dlmtr <<"DF_Fixed_PF_NH3"<< dlmtr <<"ErrDF_FixedPF_NH3"<< dlmtr <<"PF_bath_NH3"<< dlmtr <<"ErrPF_bath_NH3"<< dlmtr <<"PF_cell_NH3"<< dlmtr <<"ErrPF_cell_NH3"<< dlmtr;
-		fout<<"DF_ND3"<< dlmtr <<"Err_DF_ND3"<< dlmtr <<"DF_Fixed_PF_ND3"<< dlmtr <<"ErrDF_FixedPF_ND3"<< dlmtr <<"PF_bath_ND3"<< dlmtr <<"ErrPF_bath_ND3"<< dlmtr <<"PF_cell_ND3"<< dlmtr <<"ErrPF_cell_ND3"<< dlmtr;
-		fout<<"FC_total"<< dlmtr <<"N_NH3"<< dlmtr <<"N_C"<< dlmtr <<"N_CH2"<< dlmtr <<"N_ET"<< dlmtr <<"N_F"<< dlmtr <<"N_CD2"<< dlmtr <<"FC_NH3"<< dlmtr <<"FC_C"<< dlmtr <<"FC_CH2"<< dlmtr <<"FC_ET"<< dlmtr <<"FC_F"<< dlmtr <<"FC_CD2"<< dlmtr;
-		fout<<"SysErrDF_NH3"<< dlmtr <<"SysErrDF_ND3"<< dlmtr;
-		fout<<"NP_NH3"<< dlmtr <<"NM_NH3"<< dlmtr <<"FC_P_NH3"<< dlmtr <<"FC_M_NH3"<< dlmtr <<"NP_ND3"<< dlmtr <<"NM_ND3"<< dlmtr <<"FC_P_ND3"<< dlmtr <<"FC_M_ND3"<< endl;
+		fout<<"Bin_Q2"<< del <<"Bin_X"<< del;
+		fout<<"DF_NH3"<< del <<"Err_DF_NH3"<< del <<"PF_bath_NH3"<< del <<"ErrPF_bath_NH3"<< del <<"PF_cell_NH3"<< del <<"ErrPF_cell_NH3"<< del;
+		fout<<"FC_total"<< del <<"N_NH3"<< del <<"N_C"<< del <<"N_CH2"<< del <<"N_ET"<< del <<"N_F"<< del <<"N_CD2"<< del <<
+		      "FC_NH3"<< del <<"FC_C"<< del <<"FC_CH2"<< del <<"FC_ET"<< del <<"FC_F"<< del <<"FC_CD2\n";
 
-		//fout<<"normN_normNH3"<< dlmtr <<"normN_C"<< dlmtr <<"normN_CH2"<< dlmtr <<"normN_ET"<< dlmtr <<"normN_F"<< dlmtr <<"normN_CD2\n";
 		for(size_t i=0; i<AllBins.size(); i++){ // Loop over Q2 bins
 	 	    for(size_t j=0; j<AllBins[i].size(); j++){ // Loop over x bins
-		      if( AllBins[i][j].getDF_NH3() != 0.0 || AllBins[i][j].getDF_ND3() != 0.0 || AllBins[i][j].getDF_FixedPF_NH3() != 0.0 || AllBins[i][j].getDF_FixedPF_ND3() != 0.0 ){
+		      if( AllBins[i][j].getDF_NH3() != 0.0 || AllBins[i][j].getDF_ND3() != 0.0 ){
 
 			double qavg = AllBins[i][j].getAvgQ2("All"); double xavg = AllBins[i][j].getAvgX("All");
 			double ETsf = 1;
@@ -3559,66 +3483,62 @@ class DataSet{
 			    }
 			}
 
-			fout<<AllBins[i][j].getAvgQ2("All")<< dlmtr <<AllBins[i][j].getAvgX("All")<< dlmtr ;
-			fout<<AllBins[i][j].getDF_NH3()<< dlmtr <<AllBins[i][j].getErrDF_NH3()<< dlmtr ;
-			fout<<AllBins[i][j].getDF_FixedPF_NH3()<< dlmtr <<AllBins[i][j].getErrDF_FixedPF_NH3()<< dlmtr ;
-			fout<<AllBins[i][j].getPF_bath_NH3()<< dlmtr <<AllBins[i][j].getErrPF_bath_NH3()<< dlmtr ;
-			fout<<AllBins[i][j].getPF_cell_NH3()<< dlmtr <<AllBins[i][j].getErrPF_cell_NH3()<< dlmtr ;
+			fout<<AllBins[i][j].getAvgQ2("All")<< del <<AllBins[i][j].getAvgX("All")<< del ;
+			fout<<AllBins[i][j].getDF_NH3()<< del <<AllBins[i][j].getErrDF_NH3()<< del ;
+			fout<<AllBins[i][j].getPF_bath_NH3()<< del <<AllBins[i][j].getErrPF_bath_NH3()<< del ;
+			fout<<AllBins[i][j].getPF_cell_NH3()<< del <<AllBins[i][j].getErrPF_cell_NH3()<< del ;
 
-			fout<<AllBins[i][j].getDF_ND3()<< dlmtr <<AllBins[i][j].getErrDF_ND3()<< dlmtr ;
-			fout<<AllBins[i][j].getDF_FixedPF_ND3()<< dlmtr <<AllBins[i][j].getErrDF_FixedPF_ND3()<< dlmtr ;
-			fout<<AllBins[i][j].getPF_bath_ND3()<< dlmtr <<AllBins[i][j].getErrPF_bath_ND3()<< dlmtr ;
-			fout<<AllBins[i][j].getPF_cell_ND3()<< dlmtr <<AllBins[i][j].getErrPF_cell_ND3()<< dlmtr ;
+			fout<<AllBins[i][j].getAllFCt()<< del ;
+			fout<<AllBins[i][j].getNt("NH3")<< del <<AllBins[i][j].getNt("C")<< del <<AllBins[i][j].getNt("CH2")<< del <<AllBins[i][j].getNt("ET")*ETsf*ratioET<< del ;
+			fout<<AllBins[i][j].getNt("F")*ratioF<< del <<AllBins[i][j].getNt("CD2")*ratioCD2<< del ;
+			fout<<AllBins[i][j].getFCt("NH3")<< del <<AllBins[i][j].getFCt("C")<< del <<AllBins[i][j].getFCt("CH2")<< del <<AllBins[i][j].getFCt("ET")<< del ;
+			fout<<AllBins[i][j].getFCt("F")<< del <<AllBins[i][j].getFCt("CD2")<<"\n";
 
-			fout<<AllBins[i][j].getAllFCt()<< dlmtr ;
-			fout<<AllBins[i][j].getNt("NH3")<< dlmtr <<AllBins[i][j].getNt("C")<< dlmtr <<AllBins[i][j].getNt("CH2")<< dlmtr <<AllBins[i][j].getNt("ET")*ETsf*ratioET<< dlmtr ;
-			fout<<AllBins[i][j].getNt("F")*ratioF<< dlmtr <<AllBins[i][j].getNt("CD2")*ratioCD2<< dlmtr ;
-			fout<<AllBins[i][j].getFCt("NH3")<< dlmtr <<AllBins[i][j].getFCt("C")<< dlmtr <<AllBins[i][j].getFCt("CH2")<< dlmtr <<AllBins[i][j].getFCt("ET")<< dlmtr ;
-			fout<<AllBins[i][j].getFCt("F")<< dlmtr <<AllBins[i][j].getFCt("CD2")<< dlmtr;
-			fout<<AllBins[i][j].getSysErrDF_NH3()<< dlmtr << AllBins[i][j].getSysErrDF_ND3() << dlmtr;
-
-			fout<<AllBins[i][j].getNP("NH3")<< dlmtr <<AllBins[i][j].getNM("NH3")<< dlmtr <<AllBins[i][j].getFC_P("NH3")<< dlmtr <<AllBins[i][j].getFC_M("NH3") << dlmtr;
-			fout<<AllBins[i][j].getNP("ND3")<< dlmtr <<AllBins[i][j].getNM("ND3")<< dlmtr <<AllBins[i][j].getFC_P("ND3")<< dlmtr <<AllBins[i][j].getFC_M("ND3") << endl;
-
-			//fout<<AllBins[i][j].getNormNt("NH3")<< dlmtr <<AllBins[i][j].getNormNt("C")<< dlmtr <<AllBins[i][j].getNormNt("CH2")<< dlmtr <<AllBins[i][j].getNormNt("ET")<< dlmtr ;
-			//fout<<AllBins[i][j].getNormNt("F")<< dlmtr <<AllBins[i][j].getNormNt("CD2")<<"\n";
 		      }
 		    }
 	        }
-		// Now create data output file where each data point at a fixed x is the weighted average over all Q2 bins.
-		// This writes the PF data calculated with a uniform PF across all data
-		/*
-		string xavgPath = outFilePath + "_X_Avg.csv";
-		ofstream foutxavg(xavgPath);
-		foutxavg << "X_Bin,DF_NH3,Err_DF_NH3\n";
-		for( int k=0; k<X_Bin_Bounds.size()-1; k++ ){
-		    double xmid = ( X_Bin_Bounds[k] + X_Bin_Bounds[k+1] ) / 2.0;
-		    double weightedAvgNum = 0; // Numerator used in the weighted average calculation
-		    double weightedAvgDen = 0; // Denominator in weighted average calculation
-		    for( int m=0; m<Q2_Bin_Bounds.size()-1; m++ ){
-			double qmid = ( Q2_Bin_Bounds[m] + Q2_Bin_Bounds[m+1] ) / 2.0;
-			// Now loop over the bins and get the values
-			for( auto vec : AllBins ){
-			    for( auto Bin : vec ){
-				if( Bin.IsInBin( qmid, xmid ) && Bin.getDF_FixedPF_NH3() != 0.0 ){
-				    weightedAvgNum += Bin.getDF_FixedPF_NH3() / pow( Bin.getErrDF_FixedPF_NH3(), 2 );
-				    weightedAvgDen += 1.0 / pow( Bin.getErrDF_FixedPF_NH3(), 2 );
-				}
-			    }
-			}
-		    }
-		    // Now calculate the weighted average
-		    if( weightedAvgDen != 0 ){
-			double waVal = weightedAvgNum / weightedAvgDen;
-			double waErr = sqrt( 1.0 / weightedAvgDen );
-			foutxavg << xmid << dlmtr << waVal << dlmtr << waErr << endl;
-		    }
-		}
-		foutxavg.close();
-		*/
 	    }
 	    fout.close();
 	}
+
+	void ReadDFfromTXT( string inFilePath ){ 
+	    
+	    ifstream fin( inFilePath );
+	    if( !fin.fail() ){
+		string line;
+		getline(fin,line); // Throw away header row
+		while( getline( fin, line ) ){
+	
+		    double Bin_Q2, Bin_X;
+		    double DF_NH3, Err_DF_NH3, PF_bath_NH3, ErrPF_bath_NH3, PF_cell_NH3, ErrPF_cell_NH3;
+		    double FC_total, N_NH3, N_C, N_CH2, N_ET, N_F, N_CD2;
+		    double FC_NH3, FC_C, FC_CH2, FC_ET, FC_F, FC_CD2;
+
+		    stringstream sin(line);
+		    sin >> Bin_Q2 >> Bin_X >>
+		           DF_NH3 >> Err_DF_NH3 >> PF_bath_NH3 >> ErrPF_bath_NH3 >> PF_cell_NH3 >> ErrPF_cell_NH3 >>
+		           FC_total >> N_NH3 >> N_C >> N_CH2 >> N_ET >> N_F >> N_CD2 >>
+		           FC_NH3 >> FC_C >> FC_CH2 >> FC_ET >> FC_F >> FC_CD2;
+
+		    for( int i=0; i<AllBins.size(); i++ ){
+			for( int j=0; j<AllBins[i].size(); j++ ){
+			  if( AllBins[i][j].IsInBin( Bin_Q2, Bin_X ) ){
+
+				//AllBins[i][j].SetAvgXQ2( "All", Bin_Q2, Bin_X );
+
+				AllBins[i][j].SetDF_NH3( DF_NH3, Err_DF_NH3 );
+				AllBins[i][j].SetPF( PF_bath_NH3, ErrPF_bath_NH3, "NH3", "Bath");
+				AllBins[i][j].SetPF( PF_cell_NH3, ErrPF_cell_NH3, "NH3", "Cell");
+				//AllBins[i][j].SetSysErrDF( syserrNH3, "NH3" ); 
+				//AllBins[i][j].SetDF_FixedPF_NH3( dfpfNH3, dfpfNH3err );
+			  }
+			}
+		    }
+		} // End of while loop
+	    } // End of if checking input file
+	    fin.close();
+	} // End of function
+
 
 	// "dlmtr" is the delimiter, so it can be spaced with whitespace or a comma
 	// Reads in data from a text file
@@ -3780,7 +3700,7 @@ class DataSet{
 	    }
 	}
 
-	void MaxLikelihoodPbPt(int Run, RunPeriod& Period){
+	void MaxLikelihoodPbPt(int Run, RunPeriod& Period, bool normToFC=true){
 
 	    // Get the target polarization sign
 	    double NMR_Tpol = Period.getTargetPolarization( Run );
@@ -3812,7 +3732,7 @@ class DataSet{
 		    //if( thisDF > 0.0 && AllTheory != 0.0 && thisDFErr > 0.0 && thisNormNP > 0.0 && thisNormNM > 0.0 ){
 			
 			// This is just to temporarily get rid of the FC normalization...
-			//thisFC_P = 1; thisFC_M = 1;
+			if( !normToFC ){ thisFC_P = 1.0; thisFC_M = 1.0; }
 
 			numPbPt += corrFactor * thisDF * AllTheory * ((thisNP/thisFC_P) - (thisNM/thisFC_M));
 			denomPbPt += thisDF*thisDF * AllTheory*AllTheory * ((thisNP/thisFC_P) + (thisNM/thisFC_M));
@@ -3830,9 +3750,10 @@ class DataSet{
 	    } 
 	    if( denomPbPt != 0.0 && denomPbPtErr != 0.0 ){
 		BT_Pol = numPbPt / denomPbPt;
-		BT_Pol_Err = sqrt( numPbPtErr )/denomPbPtErr; // Pulled out of square root
+		//BT_Pol_Err = sqrt( numPbPtErr )/denomPbPtErr; // Pulled out of square root
+		BT_Pol_Err = sqrt( 1.0 / denomPbPtErr );
 
-	        //cout << "Beam-target polaization for run: PbPt = "<< BT_Pol <<" +- "<< BT_Pol_Err << endl;
+	        cout << "Beam-target polaization for run: PbPt = "<< BT_Pol <<" +- "<< BT_Pol_Err << endl;
 		//BT_Pol_Err = BT_Pol*0.05;//sqrt( errTerm );
 	    }
 	    else

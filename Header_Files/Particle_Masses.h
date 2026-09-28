@@ -11,8 +11,9 @@ const double e_mass = 0.51099895/1000.0; // electron mass in GeV/c^2 from NIST
 const double d_mass = 1.87561294257; // deuteron mass in GeV/c^2 from NIST
 const double mu_p = 2.79; // Proton magnetic moment
 
-const double beam_energy1 = 10.5473; // electron beam energy in GeV for RGC runs below 17065
-const double beam_energy2 = 10.5563; // electron beam energy in GeV for RGC runs between 17067 to 17704
-const double beam_energy3 = 10.5593; // electron beam energy in GeV for RGC runs above 17720
+const double beam_energy1  = 10.5473; // electron beam energy in GeV for RGC runs below 17065
+const double beam_energy2  = 10.5563; // electron beam energy in GeV for RGC runs between 17067 to 17704
+const double beam_energy3  = 10.5593; // electron beam energy in GeV for RGC runs above 17720
+const double avgBeamEnergy = (beam_energy1 + beam_energy2 + beam_energy3) / 3.0;
 
 #endif
