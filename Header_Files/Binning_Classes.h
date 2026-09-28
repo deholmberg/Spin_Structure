@@ -463,6 +463,7 @@ class RunPeriod{
 	// Mutator
 	void SetRunPeriod(){
 	    // Read in the information from the RMS beam charge values.
+	    /*
 	    string rmsPath = THIS_DIR + "RMS_Outputs_RGC.txt";
 	    ifstream rmsIn( rmsPath.c_str() );
 	    vector<double> rmsRuns, Currents;
@@ -479,9 +480,10 @@ class RunPeriod{
 	    }
 	    else cout <<"Failed to open RMS Beam current values...\n";
 	    rmsIn.close();
-
+	    */
+	    // Read in the RGC run information
 	    string fPath = THIS_DIR + "RGC_Run_Info.txt";
-	    ifstream fin( fPath.c_str()  );
+	    ifstream fin( fPath.c_str() );
 	    if( !fin.fail() ){
 	        string line;
 	        //getline(fin,line); // throw away header row
@@ -492,18 +494,21 @@ class RunPeriod{
 		    Run thisRun;
 		    thisRun.SetRunInfo(rn, tt, bc, be, ne, hwp, tp, ss, ts, epoch);
 		    // Now find the appropriate beam current to set...
+		    /*
 		    double rmsBC = 0; // RMS beam current
 		    for(int k=0; k<rmsRuns.size(); k++){
 			if( rmsRuns[k] == rn ){ rmsBC = Currents[k]; }
 		    }
 		    //cout << "Set run "<< rn <<" RMS beam current "<< rmsBC << endl;
 		    thisRun.SetRMSBeamCurrent( rmsBC );
+		    */
 		    Runs.push_back(thisRun);
 		}
 	    }
-	    else cout <<"Couldn't find input file; run period not set.\n";
+	    else cout <<"Couldn't find the 'RGC_Run_Info.txt' input file; run period not set.\n";
 	    fin.close();
-	    string fPath2 = THIS_DIR + "Offline_NMR_Values.txt";
+	    //string fPath2 = THIS_DIR + "Offline_NMR_Values.txt";
+	    string fPath2 = THIS_DIR + "NMR_Polarizations_Ishara.txt";
 	    ifstream fin2( fPath2.c_str() );
 	    if( !fin2.fail() ){
 		string line; getline( fin2, line ); // throw away header row
@@ -520,6 +525,7 @@ class RunPeriod{
 		    }
 		}
 	    }
+	    else cout <<"Couldn't find the 'NMR_Polarizations_Ishara.txt' input file; offline NMR target polarizations not set.\n";
 	    fin2.close();
 	}
 	// Accessors
@@ -1114,6 +1120,11 @@ class Bin{
 		else if( scaleType == "ET"  ){ ScaleET = scale; ScaleETerr = err; }
 		else if( scaleType == "F"   ){ ScaleF = scale; ScaleFerr = err; }
 		else cout << "WARNING: Unable to set scaling factors for scaleType = "<< scaleType <<". Check inputs.\n";
+	}
+	void SetAFC( double afc, string target ){
+		if( target == "NH3" ) AFC_NH3 = afc;
+		else if( target == "ND3" ) AFC_ND3 = afc;
+		else cout << "WARNING: Unable to set FC asymmetry for "<< target <<". Check inputs.\n";
 	}
 	// This function is used to set the average values of X and Q2 for a given target type
 	void SetAvgXQ2(string target, double xavg, double q2avg){
@@ -2760,6 +2771,17 @@ class DataSet{
 	    return NullBin;
 	}
 
+	double getAFC(string target) const{
+	    // The FC charges are common to all bins, so the bin they're grabbed from doesn't matter.
+	    double FC_P = AllBins[0][0].getFC_P(target);
+	    double FC_M = AllBins[0][0].getFC_M(target);
+	    if( FC_P > 0 && FC_M > 0 ) return (FC_P - FC_M) / (FC_P + FC_M);
+	    else{
+		cout <<"ERROR: Some FC charges zero for "<< target <<". Check inputs\n";
+		return -1;
+	    }
+	}
+
 	double getPF_Avg(){ return PF_Avg; }
 	double getPF_Avg_Err(){ return PF_Avg_Err; }
 	double getBT_Pol() const{ return BT_Pol; }
@@ -3714,6 +3736,7 @@ class DataSet{
 	    double numPbPt = 0.0; double denomPbPt = 0.0; // Numerator and denominator terms used for PbPt calculation
 	    double numPbPtErr = 0.0; double denomPbPtErr = 0.0; // Numerator and denominator terms used for error in PbPt calculation
 							        // denomPbPtErr term needs to be squared at the end of the calculation!!!
+	    
 	    for(size_t i=0; i<AllBins.size(); i++){ // Q2 bin loop
 		//double total = 0.0; double counts = 0.0;
 		for(size_t j=0; j<AllBins[i].size(); j++){ // Loop over x bins for a given Q2 bin
@@ -3732,13 +3755,26 @@ class DataSet{
 		    //if( thisDF > 0.0 && AllTheory != 0.0 && thisDFErr > 0.0 && thisNormNP > 0.0 && thisNormNM > 0.0 ){
 			
 			// This is just to temporarily get rid of the FC normalization...
-			if( !normToFC ){ thisFC_P = 1.0; thisFC_M = 1.0; }
-
-			numPbPt += corrFactor * thisDF * AllTheory * ((thisNP/thisFC_P) - (thisNM/thisFC_M));
-			denomPbPt += thisDF*thisDF * AllTheory*AllTheory * ((thisNP/thisFC_P) + (thisNM/thisFC_M));
-			numPbPtErr += thisDF*thisDF*AllTheory*AllTheory * ((thisNP/thisFC_P) + (thisNM/thisFC_M));
-			denomPbPtErr += thisDF*thisDF*AllTheory*AllTheory*(thisNP + thisNM);
-			
+			if( !normToFC ){ 
+			    //thisFC_P = 1.0;
+			    //thisFC_M = 1.0; 
+			    numPbPt += corrFactor * thisDF * AllTheory * (1.0*thisNP - 1.0*thisNM);
+			    denomPbPt += thisDF*thisDF * AllTheory*AllTheory * (1.0*thisNP + 1.0*thisNM);
+			    numPbPtErr += thisDF*thisDF*AllTheory*AllTheory * (1.0*thisNP + 1.0*thisNM);
+			    denomPbPtErr += thisDF*thisDF*AllTheory*AllTheory*(1.0*thisNP + 1.0*thisNM);
+			}
+			else{
+			    /*
+			    numPbPt += corrFactor * thisDF * AllTheory * ((thisNP/thisFC_P) - (thisNM/thisFC_M));
+			    denomPbPt += thisDF*thisDF * AllTheory*AllTheory * ((thisNP/thisFC_P) + (thisNM/thisFC_M));
+			    numPbPtErr += thisDF*thisDF*AllTheory*AllTheory * ((thisNP/thisFC_P) + (thisNM/thisFC_M));
+			    denomPbPtErr += thisDF*thisDF*AllTheory*AllTheory*(thisNP + thisNM);
+			    */
+			    numPbPt += corrFactor * (2.0/(1.0 + (thisFC_P/thisFC_M) )) * (thisNP - (thisFC_P/thisFC_M)*thisNM )* thisDF *AllTheory;
+   			    denomPbPt += thisDF*thisDF * AllTheory*AllTheory * (1.0*thisNP + 1.0*thisNM);
+			    numPbPtErr += thisDF*thisDF*AllTheory*AllTheory * (1.0*thisNP + 1.0*thisNM);
+			    denomPbPtErr += thisDF*thisDF*AllTheory*AllTheory*(1.0*thisNP + 1.0*thisNM);
+			}
 			/*
 			numPbPt += corrFactor * thisDF * AllTheory * (thisNormNP - thisNormNM);
 			denomPbPt += thisDF*thisDF * AllTheory*AllTheory * (thisNormNP + thisNormNM);
@@ -3754,6 +3790,7 @@ class DataSet{
 		BT_Pol_Err = sqrt( 1.0 / denomPbPtErr );
 
 	        cout << "Beam-target polaization for run: PbPt = "<< BT_Pol <<" +- "<< BT_Pol_Err << endl;
+		cout << "FC charges are: Fp = "<< AllBins[0][0].getFC_P("NH3") <<", Fm = "<< AllBins[0][0].getFC_M("NH3") << endl;
 		//BT_Pol_Err = BT_Pol*0.05;//sqrt( errTerm );
 	    }
 	    else
