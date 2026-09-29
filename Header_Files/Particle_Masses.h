@@ -16,4 +16,7 @@ const double beam_energy2  = 10.5563; // electron beam energy in GeV for RGC run
 const double beam_energy3  = 10.5593; // electron beam energy in GeV for RGC runs above 17720
 const double avgBeamEnergy = (beam_energy1 + beam_energy2 + beam_energy3) / 3.0;
 
+// Noemie's elastic PbPt values for each run period
+
+
 #endif
