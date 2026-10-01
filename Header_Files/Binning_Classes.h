@@ -3724,14 +3724,22 @@ class DataSet{
 
 	void MaxLikelihoodPbPt(int Run, RunPeriod& Period, bool normToFC=true){
 
+	    double solPol = Period.getSolenoidScale( Run );
+	    //double tarPol = Period.getTargetPolarization( Run ); // Only care about this for ammonia
+	    // Tells whether or not to flip the HelP and HelN counts and FC charges
+	    //bool flipStates = ( tarPol * solPol ) > 0;
+
 	    // Get the target polarization sign
 	    double NMR_Tpol = Period.getTargetPolarization( Run );
 
 	    // Account for the sign of the target polarization.
 	    // I essentially have to undo the sign corrections from reading in the data
+	    /*
 	    int corrFactor = 0;
 	    if( NMR_Tpol < 0 ) corrFactor = -1;
-	    else if( NMR_Tpol > 0 ) corrFactor = 1; // Allow for corrFactor to be zero for error tracing purposes
+	    else if( NMR_Tpol > 0 ) corrFactor = 1; // Allow for corrFactor to be zero for error tracing purposes */
+	    int corrFactor = 1;
+	    if( solPol > 0 ) corrFactor = -1;
 
 	    double numPbPt = 0.0; double denomPbPt = 0.0; // Numerator and denominator terms used for PbPt calculation
 	    double numPbPtErr = 0.0; double denomPbPtErr = 0.0; // Numerator and denominator terms used for error in PbPt calculation
@@ -3789,8 +3797,8 @@ class DataSet{
 		//BT_Pol_Err = sqrt( numPbPtErr )/denomPbPtErr; // Pulled out of square root
 		BT_Pol_Err = sqrt( 1.0 / denomPbPtErr );
 
-	        cout << "Beam-target polaization for run: PbPt = "<< BT_Pol <<" +- "<< BT_Pol_Err << endl;
-		cout << "FC charges are: Fp = "<< AllBins[0][0].getFC_P("NH3") <<", Fm = "<< AllBins[0][0].getFC_M("NH3") << endl;
+	        //cout << "Beam-target polaization for run: PbPt = "<< BT_Pol <<" +- "<< BT_Pol_Err << endl;
+		//cout << "FC charges are: Fp = "<< AllBins[0][0].getFC_P("NH3") <<", Fm = "<< AllBins[0][0].getFC_M("NH3") << endl;
 		//BT_Pol_Err = BT_Pol*0.05;//sqrt( errTerm );
 	    }
 	    else
@@ -3898,371 +3906,6 @@ TCanvas* FC_Asym_Systematic( DataSet& Data, string target, string period ){
 
     return c;
 }
-
-
-// This class is used for calculating the beam-target polarization on a run-by-run basis
-class PbPt{
-
-    private:
-	vector<vector<Bin>> AllBins;
-	int RunNumber = 0;
-	double NMR_Tpol = 0;
-	string Target = "N/A";
-	double BT_Pol = 0.0;
-	double BT_Pol_Err = 0.0;
-	int EpochNum = 0;
-	//double AllPhys = 0.0;
-	//double AllPhysErr = 0.0;
-    public:
-	// Constructors
-	PbPt() : AllBins( SetBinWidths() ){}
-
-	// Mutators
-	void SetRunInfo(int run, string target ){
-	    RunNumber = run; Target = target;
-	}
-	// This function reads in from a particular run so PbPt can be calculated for it
-	void ReadInThisRun(int thisRun, string TARGET_TYPE, RunPeriod& Period){
-	    RunNumber = thisRun;
-	    Target = TARGET_TYPE;
-	    EpochNum = Period.getEpochNum( thisRun );
-	    string infile = "Latest_Data/Text_Files/"+Target+"_"+to_string(thisRun)+"_DF_Data.txt";
-	    ifstream fin(infile.c_str());
-	    if( !fin.fail() ){
-		NMR_Tpol = Period.getTargetPolarization( thisRun );
-		string line; getline(fin, line); // Throw away header row
-		while( getline(fin, line) ){
-		    stringstream sin(line);
-		    double qmin, qmax, xmin, xmax, NP, NM, FC_P, FC_M, N0, FC0;
-		    sin >> qmin >> qmax >> xmin >> xmax >> NP >> NM >> FC_P >> FC_M >> N0 >> FC0;
-		    double qmid = (qmin + qmax) / 2.0;
-		    double xmid = (xmin + xmax) / 2.0;
-		    for(size_t i=0; i<AllBins.size(); i++){
-			for(size_t j=0; j<AllBins[i].size(); j++){
-			    if( AllBins[i][j].IsInBin( qmid, xmid ) ){
-				AllBins[i][j].AddCounts( NP, NM, N0, Target, xmid, qmid );
-				AllBins[i][j].AddFCCharge( FC_P, FC_M, FC0, Target );
-				//cout << qmid <<" "<< xmid <<" "<< NP <<" "<< NM <<" "<< FC_P <<" "<< FC_M << endl;
-			    }
-			}
-		    }
-		}
-	    }
-	    else{
-		cout << "ERROR: Couldn't open file '"<<infile<<"'. Check path and try again.\n";
-	    }
-	    fin.close();
-	}
-	// Calculates the raw double-spin asymmetry for this bin
-	void CalculateAllRaw(){
-	    if( Target == "NH3" || Target == "ND3" ){
-	      for(size_t i=0; i<AllBins.size(); i++){
-		for(size_t j=0; j<AllBins[i].size(); j++){
-		    AllBins[i][j].CalculateAllRaw();
-		    /*
-	    	    double normNP = AllBins[i][j].getNormNP(Target);
-		    double normNM = AllBins[i][j].getNormNM(Target);
-	    	    double nm = AllBins[i][j].getNP(); double np = AllBins[i][j].getNM();
-	    	    if( normNP > 0.0 && normNM > 0.0 ){ 
-			AllRaw = (normNP - normNM) / (normNP + normNM);
-			AllRawErr = 0.5*sqrt( (nm + np) / nm*np );
-			AllBins[i][j].SetAllRaw( AllRaw, Target );
-			AllBins[i][j].SetAllRawErr( AllRawErr, Target );
-	    	    }
-	    	    else{
-			//cout << "ERROR: FC-normalized counts might be zero; check inputs. Set AllRawNH3 = 0\n";
-	    	    }
-		    */
-		}
-	      }
-	    }
-	    else cout <<"ERROR: Target type not properly set: "<< Target << endl;
-	}
-	void SetTarget( string target ){
-	    Target = target;
-	}
-
-	// This copies a set of dilution factors from a given epoch; allows for selection between using a fixed PF for the
-	// entire epoch or using a unique PF for each bin.
-	void SetDFs( DataSet& Epoch ){
-	    for(size_t i=0; i<AllBins.size(); i++){
-		for(size_t j=0; j<AllBins[i].size(); j++){
-		    double qmid = AllBins[i][j].getBinQ2(); double xmid = AllBins[i][j].getBinX();
-		    //cout << Epoch.getDF_FixedPF_NH3(qmid,xmid) <<" "<< Epoch.getErrDF_FixedPF_NH3(qmid,xmid) << endl;
-		    AllBins[i][j].SetDF_FixedPF_NH3( Epoch.getDF_FixedPF_NH3(qmid,xmid), Epoch.getErrDF_FixedPF_NH3(qmid,xmid) ); 
-		}
-	    }
-	}
-	void SetDFs( double qval, double xval, double df, double dferr ){
-	    for(size_t i=0; i<AllBins.size(); i++){
-		for(size_t j=0; j<AllBins[i].size(); j++){
-		    double Qmid = AllBins[i][j].getBinQ2(); double Xmid = AllBins[i][j].getBinX();
-		    //cout << Epoch.getDF_FixdPF_NH3(qmid,xmid) <<" "<< Epoch.getErrDF_FixedPF_NH3(qmid,xmid) << endl;
-		    if( AllBins[i][j].IsInBin( qval, xval ) ){
-		        AllBins[i][j].SetDF_FixedPF_NH3( df, dferr  ); 
-		    }
-		}
-	    }
-	}
-
-	// After calculating the AllRaw and copying the DFs for each x, Q2 bin, find the value of PbPt for each Q2 bin
-	void CalculatePbPt(){
-	    //double total = 0.0; double counts = 0.0;
-	    vector<double> pbptVals, pbptErrs;
-	    // Account for the sign of the target polarization
-	    int corrFactor = 0;
-	    if( NMR_Tpol < 0 ) corrFactor = -1;
-	    else if( NMR_Tpol > 0 ) corrFactor = 1; // Allow for corrFactor to be zero for error tracing purposes
-
-	    double num = 0.0; double denom = 0.0;
-	    double errTerm = 0.0; // Not the full error; used in the calculation of the error
-	    for(size_t i=0; i<AllBins.size(); i++){ // Q2 bin loop
-		//double total = 0.0; double counts = 0.0;
-		for(size_t j=0; j<AllBins[i].size(); j++){ // Loop over x bins for a given Q2 bin
-		    double thisDF = AllBins[i][j].getDF_FixedPF_NH3();
-		    double thisDFErr = AllBins[i][j].getErrDF_FixedPF_NH3();
-		    double AllRaw = AllBins[i][j].getAllRaw("NH3");
-		    double AllRawErr = AllBins[i][j].getAllRawErr("NH3");
-		    double AllTheory = AllBins[i][j].getAllTheory("NH3");
-		    //cout <<"DF = "<< thisDF <<" +- "<< thisDFErr <<" "<< AllRaw <<" +- "<< AllRawErr<<" "<< AllTheory << endl;
-		    if( thisDF > 0.0 && AllRaw != 0.0 && AllTheory != 0.0 && thisDFErr > 0.0 && AllRawErr > 0.0 && AllBins[i][j].getBinX() < 0.3 ){
-			/*
-			num += AllRaw * corrFactor;
-			denom += AllTheory*thisDF;
-			errTerm += pow((AllRawErr/AllRaw),2) + pow((thisDFErr/thisDF),2);
-			*/
-			double polErr = sqrt( pow(AllRawErr,2) + pow( (AllRaw*thisDFErr/thisDF),2 )  ) / (thisDF*AllTheory);
-			pbptVals.push_back( corrFactor * AllRaw / (thisDF * AllTheory) );
-			pbptErrs.push_back( polErr );
-			//total += AllRaw / (thisDF * AllTheory);
-			//counts++;
-		    }
-		}
-		//double totalPbPt = total / counts;
-		//cout << "Beam-target polaization for Q^2 = "<< AllBins[i][0].getBinQ2() <<": PbPt = "<< totalPbPt << endl;
-	    }
-	    //double totalPbPt = total / counts;
-	    //cout << "Beam-target polaization for this run: PbPt = "<< totalPbPt << endl;
-	    // Now calculate the weighted average of the beam-target polarizations
-	    //double num = 0.0; double denom = 0.0;
-	    for(size_t i=0; i<pbptVals.size(); i++){
-		num += pbptVals[i] / pow( pbptErrs[i], 2);
-		denom += 1.0 / pow( pbptErrs[i], 2);
-	    }
-	    
-	    if( denom != 0.0 ){
-	        cout << "Beam-target polaization for run: PbPt = "<< num / denom <<" +- "<< sqrt(1.0 / denom) << endl;
-		BT_Pol = num / denom;
-		BT_Pol_Err = sqrt( 1.0 / denom );
-		//BT_Pol_Err = BT_Pol*0.05;//sqrt( errTerm );
-	    }
-	    else
-		cout << "ERROR: Invalid value of PbPt.\n";
-	}
-	// This calculates the PbPt using the elastic electron-proton channel that Noemie uses. I'm trying to use this for
-	// DIS as well, but let's see how that works.
-	//void calculateElasticPbPt(){
-	void MaxLikelihoodPbPt(){
-	    // Account for the sign of the target polarization
-	    int corrFactor = 0;
-	    if( NMR_Tpol < 0 ) corrFactor = -1;
-	    else if( NMR_Tpol > 0 ) corrFactor = 1; // Allow for corrFactor to be zero for error tracing purposes
-
-	    double numPbPt = 0.0; double denomPbPt = 0.0; // Numerator and denominator terms used for PbPt calculation
-	    double numPbPtErr = 0.0; double denomPbPtErr = 0.0; // Numerator and denominator terms used for error in PbPt calculation
-							        // denomPbPtErr term needs to be squared at the end of the calculation!!!
-	    for(size_t i=0; i<AllBins.size(); i++){ // Q2 bin loop
-		//double total = 0.0; double counts = 0.0;
-		for(size_t j=0; j<AllBins[i].size(); j++){ // Loop over x bins for a given Q2 bin
-		    double thisNP = AllBins[i][j].getNP("NH3"); // Raw counts NOT normalized to FC charge
-		    double thisNM = AllBins[i][j].getNM("NH3"); // Same as above
-		    double thisFC_P= AllBins[i][j].getFC_P("NH3");// The FC_P charge from the NH3 targets
-		    double thisFC_M= AllBins[i][j].getFC_M("NH3");// Same as above for FC_M
-		    double thisNormNP = AllBins[i][j].getNormNP("NH3"); // NP counts normalized to FC_P
-		    double thisNormNM = AllBins[i][j].getNormNM("NH3"); // NM counts normalized to FC_M
-		    double thisDF = AllBins[i][j].getDF_FixedPF_NH3();
-		    double thisDFErr = AllBins[i][j].getErrDF_FixedPF_NH3();
-		    double AllTheory = AllBins[i][j].getAllTheory("NH3");
-		    if( thisDF > 0.0 && AllTheory != 0.0 && thisDFErr > 0.0 && thisFC_P > 0.0 && thisFC_M > 0.0 && thisNP > 0.0 && thisNM > 0.0 /*&& AllBins[i][j].getBinX() < 0.3*/ ){
-		    //if( thisDF > 0.0 && AllTheory != 0.0 && thisDFErr > 0.0 && thisNormNP > 0.0 && thisNormNM > 0.0 ){
-			
-			numPbPt += corrFactor * thisDF * AllTheory * (thisNP - thisNM);
-			denomPbPt += thisDF*thisDF * AllTheory*AllTheory * (thisNP + thisNM);
-			numPbPtErr += thisDF*thisDF*AllTheory*AllTheory * ((thisNP/thisFC_P) + (thisNM/thisFC_M));
-			denomPbPtErr += thisDF*thisDF*AllTheory*AllTheory*(thisNP + thisNM);
-			
-			/*
-			numPbPt += corrFactor * thisDF * AllTheory * (thisNormNP - thisNormNM);
-			denomPbPt += thisDF*thisDF * AllTheory*AllTheory * (thisNormNP + thisNormNM);
-			numPbPtErr += thisDF*thisDF*AllTheory*AllTheory * ((thisNormNP/thisFC_P) + (thisNormNM/thisFC_M));
-			denomPbPtErr += thisDF*thisDF*AllTheory*AllTheory*(thisNormNP + thisNormNM);
-			*/
-		    }
-		}
-	    } 
-	    if( denomPbPt != 0.0 && denomPbPtErr != 0.0 ){
-		BT_Pol = numPbPt / denomPbPt;
-		BT_Pol_Err = sqrt( numPbPtErr )/denomPbPtErr; // Pulled out of square root
-
-	        cout << "Beam-target polaization for run: PbPt = "<< BT_Pol <<" +- "<< BT_Pol_Err << endl;
-		//BT_Pol_Err = BT_Pol*0.05;//sqrt( errTerm );
-	    }
-	    else
-		cout << "ERROR: Invalid value of PbPt.\n";
-	}
-
-	void SetAllPhys( double allphys, double allphyserr, double qmid, double xmid ){
-	    for(size_t i=0; i<AllBins.size(); i++){
-		for(size_t j=0; j<AllBins[i].size(); j++){
-		    if( AllBins[i][j].IsInBin( qmid, xmid ) ) AllBins[i][j].SetAllPhys( allphys, allphyserr, "NH3" );
-		}
-	    }
-	}
-	void SetAllRaw( double allraw, double allrawerr, double qmid, double xmid ){
-	    for(size_t i=0; i<AllBins.size(); i++){
-		for(size_t j=0; j<AllBins[i].size(); j++){
-		    if( AllBins[i][j].IsInBin( qmid, xmid ) ){
-			 AllBins[i][j].SetAllRaw( allraw, "NH3" );
-			 AllBins[i][j].SetAllRawErr( allrawerr, "NH3" );
-		    }
-		}
-	    }
-	}
-
-	void CalculateAllPhys( int Run, string Target, DataSet& Epoch, RunPeriod& Period, bool useElastic=false ){
-	    // Make sure that everything has been properly calculated.
-	    // Read in the dilution factors from the input epoch
-	    //cout << "Set DFs\n";
-	    this->SetDFs( Epoch );
-	    //cout << "Read in run "<< Run <<" "<< Target << endl;
-	    this->ReadInThisRun( Run, Target, Period ); // Read in info for this run
-	    //cout << "Calculate AllRaw\n";
-	    this->CalculateAllRaw(); // Set the raw asymmetry
-	    //cout << "Calculate PbPt\n";
-	    if( useElastic ) this->MaxLikelihoodPbPt(); // Calculates PbPt using Noemie's formula
-	    else this->CalculatePbPt(); // Calculate the beam-target polarization for this run
-
-	    // Once we have the raw asymmetries and target polarizations, calculate the A1 values for each bin
-	    for( size_t i=0; i<AllBins.size(); i++ ){ // Q2 bin loop
-		for( size_t j=0; j<AllBins[i].size(); j++){ // x bin loop
-		    Bin thisBin = AllBins[i][j];
-		    if( thisBin.getDF_FixedPF_NH3() != 0.0 && thisBin.getDepolFactorNH3() != 0.0 && BT_Pol != 0.0){
-			AllBins[i][j].CalculateAllPhys( BT_Pol, BT_Pol_Err );
-			//cout << "A_ll,raw = "<< AllBins[i][j].getAllRaw("NH3") <<" +- "<< AllBins[i][j].getAllRawErr("NH3") << endl;
-			//cout << "A_ll,phys = "<< AllBins[i][j].getAllPhysNH3() <<" +- "<< AllBins[i][j].getAllPhysNH3Err() << endl;
-		        //double a1 = (thisBin.getAllRaw("NH3")/(BT_Pol*thisBin.getDF_FixedPF_NH3()*thisBin.getDepolFactorNH3())) - thisBin.getEtaNH3()*thisBin.getA2NH3();
-		        //double a1_err = a1*0.05; // temporary placeholder
-		        //AllBins[i][j].SetA1( a1, a1_err, "NH3" );
-		    }
-		}
-	    }
-	}
-	void CalculateA1(){
-	    // Make sure that everything has been properly calculated.
-	    // Read in the dilution factors from the input epoch
-	    // Once we have the raw asymmetries and target polarizations, calculate the A1 values for each bin
-	    for( size_t i=0; i<AllBins.size(); i++ ){ // Q2 bin loop
-		for( size_t j=0; j<AllBins[i].size(); j++){ // x bin loop
-		    Bin thisBin = AllBins[i][j];
-		    if( thisBin.getDepolFactorNH3() != 0.0 && thisBin.getAllPhysNH3() > 0.0 ){
-		        double a1 = (thisBin.getAllPhysNH3()/(thisBin.getDepolFactorNH3())) - thisBin.getEtaNH3()*thisBin.getA2NH3();
-		        double a1_err = thisBin.getAllPhysNH3Err()/thisBin.getDepolFactorNH3(); // temporary placeholder
-			//cout << "A1 = "<< a1 <<" +- "<< a1_err << endl;
-		        AllBins[i][j].SetA1( a1, a1_err, "NH3" );
-		    }
-		}
-	    }
-	}
-
-
-	// Accessors
-	int getRunNumber() const{ return RunNumber; }
-	double getBT_Pol() const{ return BT_Pol; }
-	double getBT_Pol_Err() const{ return BT_Pol_Err; }
-	int getEpochNum() const{ return EpochNum; }
-	double getAllPhys(double qmid, double xmid) const{
-	    for(size_t i=0; i<AllBins.size(); i++){
-		for(size_t j=0; j<AllBins[i].size(); j++){
-		    if( AllBins[i][j].IsInBin( qmid, xmid ) ){
-			return AllBins[i][j].getAllPhysNH3();
-		    }
-		}
-	    }
-	    return 0.0;
-	}
-	double getErrAllPhys(double qmid, double xmid) const{
-	    for(size_t i=0; i<AllBins.size(); i++){
-		for(size_t j=0; j<AllBins[i].size(); j++){
-		    if( AllBins[i][j].IsInBin( qmid, xmid ) ){
-			return AllBins[i][j].getAllPhysNH3Err();
-		    }
-		}
-	    }
-	    return 0.0;
-	}
-
-	double getA1(double qmid, double xmid) const{
-	    for(size_t i=0; i<AllBins.size(); i++){
-		for(size_t j=0; j<AllBins[i].size(); j++){
-		    if( AllBins[i][j].IsInBin( qmid, xmid ) ){
-			return AllBins[i][j].getA1NH3();
-		    }
-		}
-	    }
-	    return 0.0;
-	}
-	double getErrA1(double qmid, double xmid) const{
-	    for(size_t i=0; i<AllBins.size(); i++){
-		for(size_t j=0; j<AllBins[i].size(); j++){
-		    if( AllBins[i][j].IsInBin( qmid, xmid ) ){
-			return AllBins[i][j].getErrA1NH3();
-		    }
-		}
-	    }
-	    return 0.0;
-	}
-	double getA1Theory(double qmid, double xmid, string target) const{
-	    for(size_t i=0; i<AllBins.size(); i++){
-		for(size_t j=0; j<AllBins[i].size(); j++){
-		    if( AllBins[i][j].IsInBin( qmid, xmid ) ){
-			return AllBins[i][j].getA1Theory( target );
-		    }
-		}
-	    }
-	    return 0.0;
-	}
-	double getAllRaw(double qmid, double xmid, string target) const{
-	    for(size_t i=0; i<AllBins.size(); i++){
-	 	for(size_t j=0; j<AllBins[i].size(); j++){
-		    if( AllBins[i][j].IsInBin( qmid, xmid ) ){ 
-			return AllBins[i][j].getAllRaw( target );
-		    }
-		}
-	    }
-	    cout <<"ERROR: Couldn't find bin in range specified: Q2 = "<<qmid<<", X = "<<xmid<<endl;
-	    return 0.0;
-	}
-	double getAllRawErr(double qmid, double xmid, string target) const{
-	    for(size_t i=0; i<AllBins.size(); i++){
-	 	for(size_t j=0; j<AllBins[i].size(); j++){
-		    if( AllBins[i][j].IsInBin( qmid, xmid ) ){ 
-			return AllBins[i][j].getAllRawErr(target);
-		    }
-		}
-	    }
-	    cout <<"ERROR: Couldn't find bin in range specified: Q2 = "<<qmid<<", X = "<<xmid<<endl;
-	    return 0.0;
-	}
-	void Print() const{
-	    for(size_t i=0; i<AllBins.size(); i++){
-		for(size_t j=0; j<AllBins[i].size(); j++){
-		    AllBins[i][j].Print();
-		}
-	    }
-	}
-	// Destructors
-
-};
 
 // Reads in A1 data from previous experiments; used in the Make_A1_NH3_Plots function
 // Data in the following form: Compass
@@ -4588,6 +4231,7 @@ vector<TCanvas*> Make_A1_NH3_Plots( vector<DataSet>& AllPhysVals, string sector,
 
 // This makes a TGraphErrors object of all the target polarizations for the runs in a given epoch
 // Make sure that the DFs have been calculated for the "DF_Data" set!!!
+/*
 TGraphErrors* Run_Range_PbPt( vector<int>& Epoch, DataSet& DF_Data, string Target, RunPeriod& Period ){
 
     vector<double> runs, pbpt, pbptErr, zeros; // Used for plotting
@@ -4615,7 +4259,7 @@ TGraphErrors* Run_Range_PbPt( vector<int>& Epoch, DataSet& DF_Data, string Targe
     }
 
 }
-
+*/
 // Plots PbPt over several epochs using the elastic method
 TCanvas* All_Epochs_PbPt( vector<int>& Epoch, vector<DataSet>& DF_Data, string Target ){
 
@@ -5223,54 +4867,6 @@ TCanvas* NH3_Legend_Plot( DataSet& AllData, string sector ){
     return NH3_Plot;
 }
 
-TCanvas* A1_Legend_Plot( PbPt& AllData, string sector ){
- 
-    vector<int> palette = { 1, 632, 800, 400, 416, 600, 840, 880, 900, 616, 820, 432, 920, 860 };
-    int pint = 0;
-
-    TMultiGraph* mgNH3 = new TMultiGraph();
-    TLegend* mgLeg = new TLegend(0.1,0.7,0.4,0.9);
-    mgLeg->SetNColumns(3);
-    mgLeg->SetHeader("Q^{2} Bins (GeV^{2})","C");
-
-    for(size_t i=0; i<Q2_Bin_Bounds.size()-1; i++){
-	double qmid = (Q2_Bin_Bounds[i]+Q2_Bin_Bounds[i+1])/2.0;
-	vector<double> xbins, a1nh3vals, zeros, a1nh3errs;
-	for(size_t j=0; j<X_Bin_Bounds.size()-1; j++){
-	    double xmid = (X_Bin_Bounds[j]+X_Bin_Bounds[j+1])/2.0;
-	    double thisA1NH3 = AllData.getA1(qmid, xmid);
-	    double thisErrA1NH3 = AllData.getErrA1(qmid, xmid);
-	    if( thisA1NH3 != 0.0 ){
-		xbins.push_back(xmid); zeros.push_back(0.0);
-		a1nh3vals.push_back( thisA1NH3 );
-		a1nh3errs.push_back( thisErrA1NH3 );
-	    }
-	}
-	if( xbins.size() > 0 ){
-	    TGraphErrors* gr = new TGraphErrors(xbins.size(), xbins.data(), a1nh3vals.data(), zeros.data(), a1nh3errs.data() );
-	    gr->SetMarkerColor( palette[pint] );
-	    if(pint < 4 ) gr->SetMarkerStyle(kFullCircle); 
-	    else if(pint >= 4 && pint < 8) gr->SetMarkerStyle(kFullTriangleUp);
-	    else if(pint >= 8) gr->SetMarkerStyle(kFullSquare);
-	    mgNH3->Add( gr, "p" ); 
-	    //string legTitle = "Q^{2}=" + to_string( trunc(qmid*1000)/1000 );
-	    stringstream legTitle; legTitle << "Q^{2}=" << fixed << setprecision(3) << qmid;
-	    mgLeg->AddEntry( gr, legTitle.str().c_str(), "p");
-	    pint++;
-	}
-    }
-
-    string title = "A1_{P} for "+sector+"; X; A1_{P}";
-    mgNH3->SetTitle(title.c_str());
-    mgNH3->GetXaxis()->SetLimits(0,0.8); mgNH3->GetYaxis()->SetRangeUser(0.0,0.4);
-
-    string pltTitle = "A1p_Plot_"+sector;
-    TCanvas* NH3_Plot = new TCanvas(pltTitle.c_str(),pltTitle.c_str(),800,600);
-    NH3_Plot->cd();
-    mgNH3->Draw("AP");
-    mgLeg->Draw("same");
-    return NH3_Plot;
-}
 
 // Makes a plot of the numerator term from the DF through PF calculation
 /*

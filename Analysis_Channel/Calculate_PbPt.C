@@ -19,6 +19,15 @@
 
 using namespace std;
 
+// This function appends a string object to a file of a given path
+void AppendToFile( string fileName, string data ){
+
+    ofstream fout;
+    fout.open( fileName, ios_base::app ); // Set the file to append
+    fout << data;
+
+}
+
 // This function takes two vectors, one of values and one of errors and calculates a weighted average.
 // This value is returned in a vector, where the first entry is the average and the second is the error.
 vector<double> WeightedAverage( vector<double>& Vals, vector<double>& Errs ){
@@ -64,6 +73,13 @@ vector<double> WeightedAverage( vector<double>& Vals, vector<double>& Errs ){
 // This function returns a TCanvas object holding the normalized and unnormalized PbPt vs. run number 
 // for a specified range of epochs
 TCanvas* Plot_PbPt_Epoch( RunPeriod& Period, int FirstEpoch, int LastEpoch, string Period_Title ){
+
+    // Set the Xaxis run ranges based on the run period
+    double runMin = 0; double runMax = 0;
+    if( Period_Title == "Summer" ){ runMin = 16000; runMax = 16800; }
+    if( Period_Title == "Fall (Neg. Sol.)" ){ runMin = 16800; runMax = 17250; }
+    if( Period_Title == "Fall (Pos. Sol.)" ){ runMin = 17150; runMax = 17500; }
+    if( Period_Title == "Spring" ){ runMin = 17450; runMax = 17800; }
 
     // Hold all the relevant PbPt info
     // A_FC is the FC charge asymmetry for that run (with sign correction to TPol), and
@@ -151,6 +167,11 @@ TCanvas* Plot_PbPt_Epoch( RunPeriod& Period, int FirstEpoch, int LastEpoch, stri
 	        Neg_NMR_PbPtErr.push_back( nmrPbPtErr );
 
 	    }
+
+	    // Write the PbPt data to a file
+	    string dataStream = to_string( Run ) +"   "+ to_string( unnormPbPt ) +"   "+ to_string( unnormPbPtErr ) +"   ";
+	    dataStream += to_string( normPbPt ) +"   "+ to_string( normPbPtErr ) + "\n";
+	    AppendToFile( "Output_Data/All_NH3_PbPt.txt", dataStream );
 
 	}
 	
@@ -371,12 +392,16 @@ TCanvas* Plot_PbPt_Epoch( RunPeriod& Period, int FirstEpoch, int LastEpoch, stri
     double marginRight  = gPad->GetRightMargin();
     double marginCenter = marginLeft + (1.0 - marginLeft - marginRight ) / 2.0;
     gStyle->SetTitleX( marginCenter ); gStyle->SetTitleAlign(23);
+    Pos_mgNorm->GetXaxis()->SetNdivisions(505,true);
+    Pos_mgNorm->GetXaxis()->SetRangeUser(runMin, runMax);
     Pos_mgNorm->GetYaxis()->SetRangeUser(0,1.2);
     Pos_mgNorm->Draw("ap"); Pos_legNorm->Draw("same"); Pos_NormLine->Draw("same");
 
     c->cd(2); 
     gPad->SetLeftMargin(0.18); gPad->SetRightMargin(0.02);
     gStyle->SetTitleX( marginCenter ); gStyle->SetTitleAlign(23);
+    Pos_mgUnnorm->GetXaxis()->SetNdivisions(505,true);
+    Pos_mgUnnorm->GetXaxis()->SetRangeUser(runMin, runMax);
     Pos_mgUnnorm->GetYaxis()->SetRangeUser(0,1.2);
     Pos_mgUnnorm->Draw("ap"); Pos_legUnnorm->Draw("same"); Pos_UnnormLine->Draw("same");
 
@@ -390,12 +415,16 @@ TCanvas* Plot_PbPt_Epoch( RunPeriod& Period, int FirstEpoch, int LastEpoch, stri
     c->cd(4); 
     gPad->SetLeftMargin(0.18); gPad->SetRightMargin(0.02);
     gStyle->SetTitleX( marginCenter ); gStyle->SetTitleAlign(23);
+    Neg_mgNorm->GetXaxis()->SetNdivisions(505,true);
+    Neg_mgNorm->GetXaxis()->SetRangeUser(runMin, runMax);
     Neg_mgNorm->GetYaxis()->SetRangeUser(-1.2,0);
     Neg_mgNorm->Draw("ap"); Neg_legNorm->Draw("same"); Neg_NormLine->Draw("same");
 
     c->cd(5); 
     gPad->SetLeftMargin(0.18); gPad->SetRightMargin(0.02);
     gStyle->SetTitleX( marginCenter ); gStyle->SetTitleAlign(23);
+    Neg_mgUnnorm->GetXaxis()->SetNdivisions(505,true);
+    Neg_mgUnnorm->GetXaxis()->SetRangeUser(runMin, runMax);
     Neg_mgUnnorm->GetYaxis()->SetRangeUser(-1.2,0);
     Neg_mgUnnorm->Draw("ap"); Neg_legUnnorm->Draw("same"); Neg_UnnormLine->Draw("same");
 

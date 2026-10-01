@@ -71,6 +71,8 @@ vcpkg_installed/
 Testing/
 Latest_Skims/ROOT_Files/
 Latest_Skims/Text_Files/
+Latest_Skims/Elastic_Text_Files/
+Latest_Skims/backups/
 Utility_Scripts/backups/
 Utility_Scripts/PDF_Plots/
 Utility_Scripts/Outputs/

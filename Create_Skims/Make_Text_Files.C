@@ -130,12 +130,13 @@ bool MakeTextFile( int Run, RunPeriod& Period, vector<Input>& FCData, string fol
     // --> "HelN" == +- or -+
     // The FC are swapped based on this configuration as well.
     // "solPol" is the solenoid polarization; negative for negative polarization, and positive for pos. pol.
+    /* Temporarily removed for now
     double solPol = Period.getSolenoidScale( Run );
     double tarPol = 1;
     if( Target == "NH3" || Target == "ND3" ) tarPol = Period.getTargetPolarization( Run ); // Only care about this for ammonia
     // Tells whether or not to flip the HelP and HelN counts and FC charges
     bool flipStates = ( tarPol * solPol ) > 0;
-
+    */
     // Now loop over all bins in the profile objects, writing the data for any bins with non-zero counts
 
     if( Target == "Empty" ) Target = "ET";
@@ -170,21 +171,17 @@ bool MakeTextFile( int Run, RunPeriod& Period, vector<Input>& FCData, string fol
 	    double FC_P = thisData.FC_P;
 	    double FC_M = thisData.FC_M;
 
-	    // If there's data, write the bin...
-	    //cout << Q2Min <<"   "<< Q2Max <<"   "<< XMin <<"   "<< XMax <<"   "<< HelP_Counts <<"   "<< HelM_Counts <<"   "<<
-	    //	    FC_P <<"   "<< FC_M <<"   "<< 0 <<"   "<< 0 <<"   "<< xMean <<"   "<< q2Mean << endl;    
-
-	    //if( HelP_Counts > 0 && HelM_Counts > 0 && Q2Min > 0 && Q2Max > 0 && XMin > 0 && XMax > 0 ){
-
-		if( flipStates ){
-			fout << Q2Min <<"   "<< Q2Max <<"   "<< XMin <<"   "<< XMax <<"   "<< HelM_Counts <<"   "<< HelP_Counts <<"   "<<
-			FC_M <<"   "<< FC_P <<"   "<< 0 <<"   "<< 0 <<"   "<< xMean <<"   "<< q2Mean << endl;
-		} 
-		else{
-			fout << Q2Min <<"   "<< Q2Max <<"   "<< XMin <<"   "<< XMax <<"   "<< HelP_Counts <<"   "<< HelM_Counts <<"   "<<
-			FC_P <<"   "<< FC_M <<"   "<< 0 <<"   "<< 0 <<"   "<< xMean <<"   "<< q2Mean << endl;
-		}
-	    //}
+/*
+	    if( flipStates ){
+		fout << Q2Min <<"   "<< Q2Max <<"   "<< XMin <<"   "<< XMax <<"   "<< HelM_Counts <<"   "<< HelP_Counts <<"   "<<
+		FC_M <<"   "<< FC_P <<"   "<< 0 <<"   "<< 0 <<"   "<< xMean <<"   "<< q2Mean << endl;
+	    } 
+	    else{
+*/
+		fout << Q2Min <<"   "<< Q2Max <<"   "<< XMin <<"   "<< XMax <<"   "<< HelP_Counts <<"   "<< HelM_Counts <<"   "<<
+		FC_P <<"   "<< FC_M <<"   "<< 0 <<"   "<< 0 <<"   "<< xMean <<"   "<< q2Mean << endl;
+//	    }
+	    
 	
 	}
 	
@@ -279,14 +276,15 @@ void Make_Text_Files(){
 	cout << endl;
     }
 
-    // Check for any polarized runs with 
+    // Check for any polarized runs with the wrong sign...
+    /* 
     if( WrongSignRuns.size() > 0 ){
 	cout <<"There is(are) "<< WrongSignRuns.size() <<" run(s) with the wrong target polarization.\n";
 	cout <<"Runs with wrong sign:\n";
 	for(int Run : WrongSignRuns) cout <<"--> Run "<< Run << endl;
 	cout << endl;
     }
-
+    */
     cout <<"All done! :)\n";
 
 }
