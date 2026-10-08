@@ -439,14 +439,248 @@ TCanvas* Plot_PbPt_Epoch( RunPeriod& Period, int FirstEpoch, int LastEpoch, stri
 
 }
 
+// Holds boundaries for elastic Q2 bin values
+vector<double> El_Q2_Bin_Bounds = {1.8, 1.923765, 2.056040, 2.197410, 2.348501, 2.509980, 2.682562, 2.867011, 3.064142, 3.274828, 3.5};
+
+
+// This dumb struct holds the elastic scattering information for a given run
+struct ElasticInfo{
+
+    double A_el      = 0; // Theoretical elastic asymmetry from Noemie's code
+    double N_P       = 0; // Number of helicity+1 scattering events
+    double N_M       = 0; // Number of helicity-1 scattering events
+    double FC_P      = 0; // Faraday Cup charge for helicity+1 data
+    double FC_M      = 0; // Faraday Cup charge for helicity-1 data
+    double Q2_Mean   = 0; // Mean value of Q2 for this bin
+    double Q2_Low    = 0; // Lower boundary of Q2 bin (Q2 must be >= this value)
+    double Q2_High   = 0; // Upper boundary of Q2 bin (Q2 must be < this value)
+    double DF_el     = 0; // Elastic dilution factor
+    double DF_el_err = 0; // Error in the elastic dilution factor
+
+    void SetValues( string data ){
+	stringstream sin(data); double theta_mean;
+	sin >> Q2_Mean >> theta_mean >> A_el >> N_P >> N_M >> FC_P >> FC_M;
+	int size = El_Q2_Bin_Bounds.size();
+	for(int i=0; i<size-1; i++){
+	    double qlow = El_Q2_Bin_Bounds[i]; double qhigh = El_Q2_Bin_Bounds[i+1];
+	    if( Q2_Mean >= qlow && Q2_Mean < qhigh ){
+		Q2_Low  = qlow;
+		Q2_High = qhigh;
+		return;
+	    }
+	}
+        cout <<"ERROR: Couldn't find bin bounds for Q2_Mean = "<< Q2_Mean <<". Bin bounds not set!!\n";
+        cout << data << endl;
+    }
+
+    // Checks if a given Q2 midpoint is within this boundary
+    bool isInBin( double Q2Mid ) const{ return Q2Mid >= Q2_Low && Q2Mid < Q2_High; }
+
+    // Sets DF info
+    void SetDF( double df, double dferr ){
+	DF_el = df;
+	DF_el_err = dferr;
+    }
+    
+    void Print() const{
+	cout <<"****** For "<< Q2_Low <<" <= Q2 < "<< Q2_High <<" ******\n";
+	cout <<"----> A_el    = "<< A_el << endl;
+	cout <<"----> N_P     = "<< N_P << endl;
+	cout <<"----> N_M     = "<< N_M << endl;
+	cout <<"----> FC_P    = "<< FC_P << endl;
+	cout <<"----> FC_M    = "<< FC_M << endl;
+	cout <<"----> Q2_Mean = "<< Q2_Mean << endl;
+	cout <<"----> DF_el   = "<< DF_el <<" +- "<< DF_el_err << endl;
+	cout <<"***********************************\n";
+    }
+
+};
+
+// This dumb struct just holds the PbPt information
+struct PbPt{
+
+    int RunNumber        = 0; // Run number
+    double PbPt_Raw      = 0; // PbPt unnormalized to FC charge
+    double PbPt_Raw_Err  = 0;
+    double PbPt_Norm     = 0; // PbPt normalized to the FC charge
+    double PbPt_Norm_Err = 0;
+    // Holds the elastic info for convenience; vector for each elastic Q2 bin
+    vector<ElasticInfo> Elastic_Bins;
+
+    void SetValues( string data, string target="NH3" ){
+	stringstream sin(data);
+	sin >> RunNumber >> PbPt_Raw >> PbPt_Raw_Err >> PbPt_Norm >> PbPt_Norm_Err;
+	// Once the run number is obtained, get all the elastic run info
+	ifstream fin( string("../Latest_Skims/Elastic_Text_Files/"+ target +"_"+to_string(RunNumber) +"_Elastic.txt") );
+	if( fin.fail() ){ cout <<"ERROR: Couldn't set elastic info in PbPt struct for run "<< RunNumber << endl; return; }
+
+	string line;
+	getline( fin, line ); // Throw away header row
+	while( getline( fin, line ) ){
+	    ElasticInfo EI;
+	    EI.SetValues( line );
+	    Elastic_Bins.push_back( EI );
+	}
+	fin.close();
+
+    }
+
+    // Based on the string query, return the given elastic bin info for the Q2 bin
+    double GetElasticBinValue( string item, double q2Mid ) const{
+	for(auto EI : Elastic_Bins){
+	   if( EI.isInBin( q2Mid ) ){
+		if( item == "A_el" ) return EI.A_el;
+		else if( item == "N_P" ) return EI.N_P;
+		else if( item == "N_M" ) return EI.N_M;
+		else if( item == "FC_P" ) return EI.FC_P;
+		else if( item == "FC_M" ) return EI.FC_M;
+		else if( item == "Q2_Mean" ) return EI.Q2_Mean;
+	   } 
+	}
+	cout << "ERROR: Unable to find query for "<< item <<" at Q2 midpoint "<< q2Mid <<" in run "<< RunNumber <<". Returning zero...\n";
+	return 0;
+    }
+
+    // Sets the elastic DF based on the run number
+    void SetElasticDF(){
+	string Period, Tpol; // run period and target polarization
+	// Set run period
+	if( RunNumber < 16800 ) Period = "Su22";
+	else if( RunNumber > 16800 && RunNumber < 17185 ) Period = "Fa22Neg";
+	else if( RunNumber > 17185 && RunNumber < 17450 ) Period = "Fa22Pos";
+	else if( RunNumber > 17450 && RunNumber <=17768 ) Period = "Sp23Inb";
+	else Period = "Sp23Outb";
+	// Set target polarization
+	if( PbPt_Raw > 0 ) Tpol = "Pos";
+	else if( PbPt_Raw < 0 ) Tpol = "Neg"; // Allows for Tpol to be unititialized for debugging...
+
+	ifstream fin( string("Output_Data/Elastic_DF_Data_"+ Tpol +"_"+ Period +".txt") );
+	if( fin.fail() ){ cout <<"ERROR: Unable to find elastic DF data for "<< Period <<" "<< Tpol <<" at run "<< RunNumber <<". Elastic DF not set!\n"; return; }
+
+	// Bin_Q2 Bin_X DF_NH3 Err_DF_NH3	
+	string line; 
+	getline( fin, line ); // Throw away header row
+	while( getline( fin, line ) ){
+	    stringstream sin(line);
+	    double q2mean, dummyX, df, dferr;
+	    sin >> q2mean >> dummyX >> df >> dferr;
+	    int size = Elastic_Bins.size();
+	    for( int i=0; i<size; i++ ){
+		if( Elastic_Bins[i].isInBin( q2mean ) ) Elastic_Bins[i].SetDF( df, dferr );
+	    }
+	}
+	fin.close();
+
+    }
+
+    void Print() const{
+	cout <<"==== Run "<< RunNumber <<" PbPt Info ====\n";
+	cout <<"--> PbPt_Raw  = "<< PbPt_Raw <<" +- "<< PbPt_Raw_Err << endl;
+	cout <<"--> PbPt_Norm = "<< PbPt_Norm <<" +- "<< PbPt_Norm_Err << endl;
+	for(auto EI : Elastic_Bins ) EI.Print(); // Print elastic bin contents too
+	cout <<"=============================\n\n";
+    }
+
+    // First entry is the numerator term for PNF, the second is the denominator term. Returns zeros if denominator is invalid
+    vector<double> GetTermsPNF( string useNorm="Raw" ) const{
+	double PNF_num = 0; double PNF_den = 0;
+	for(auto EI : Elastic_Bins){
+	    if( EI.Q2_Mean != 0 ){
+		double PbPt = PbPt_Raw;
+		if( useNorm != "Raw" ) PbPt = PbPt_Norm;
+		PNF_num += EI.DF_el * (EI.N_P - EI.N_M) * EI.A_el * PbPt;
+		PNF_den += pow( EI.DF_el, 2 ) * (EI.N_P + EI.N_M) * pow( (EI.A_el * PbPt ), 2 );
+	    }
+	}
+	vector<double> PNF_terms = { PNF_num, PNF_den };
+	return PNF_terms;
+    }
+
+};
+// Returns a vector of all PbPt info
+vector<PbPt> All_PbPt_Info(){
+    
+    vector<PbPt> Values;
+
+    ifstream fin("Output_Data/All_NH3_PbPt.txt");
+    if( fin.fail() ){ cout <<"ERROR: Couldn't open PbPt file. No PbPt info set! Check inputs.\n"; return Values; }
+
+    string line;
+    while( getline( fin, line ) ){
+	PbPt thisRun;
+	thisRun.SetValues( line ); // Sets the values for PbPt for this run specifically
+	thisRun.SetElasticDF(); // Sets the elastic DF data
+	Values.push_back( thisRun );
+    }
+    fin.close();
+
+    return Values;
+}
+
+// This function calculates the PNF for a given run period and target polarization. Returns a vector with the PNF info.
+// The first entry is the actual PNF value, the second is the statistical error on it
+vector<double> Calculate_PNF( vector<PbPt>& AllPbPt, RunPeriod& RP, string Period, string Target, int targetPol ){
+
+    vector<double> PNF = {0,0};
+
+    // Get the run info
+    auto Runs = RP.getElasticEpoch( Period, Target, targetPol );
+    //for(int r : Runs) cout << r << endl;
+
+    // PNF terms
+    double PNF_num = 0; double PNF_den = 0;
+
+    // Loop to calculate the PNF
+    // Get a vector of all PbPt to use...
+    for( int r : Runs ){
+	// Find the appropriate value of PbPt
+	for( PbPt p : AllPbPt ){
+	    if( p.RunNumber == r ){
+		auto PNF_terms = p.GetTermsPNF(); // Defalts to using raw counts
+		PNF_num += PNF_terms[0];
+		PNF_den += PNF_terms[1];
+	    }
+	}
+    }
+
+    if( PNF_den > 0 ){
+	PNF[0] = PNF_num / PNF_den;
+	PNF[1] = 1.0 / sqrt( PNF_den );
+	cout <<"PNF for "<< Period <<", "<< Target <<", Pt ~ "<< targetPol <<": PNF = "<< PNF[0] <<" +- "<< PNF[1] << endl;
+    }
+    else cout <<"ERROR: Invalid calculation of PNF for "<< Period <<". Check inputs.\n";
+
+    return PNF;
+
+}
+
 void Calculate_PbPt(){
+
+    // If there's already a file holding the PbPt info, make sure it's deleted
+    if( remove("Output_Data/All_NH3_PbPt.txt") == 0 ) cout <<"Removed NH3 PbPt file...\n";
 
     RunPeriod Period; // Holds the run info
 
-    auto Plot_Su22    = Plot_PbPt_Epoch( Period, 1, 10, "Summer" );            Plot_Su22->Print("PDF_Plots/PbPt_Vs_Runs.pdf(");
-    auto Plot_Fa22Neg = Plot_PbPt_Epoch( Period, 11, 15, "Fall (Neg. Sol.)" ); Plot_Fa22Neg->Print("PDF_Plots/PbPt_Vs_Runs.pdf");
-    auto Plot_Fa22Pos = Plot_PbPt_Epoch( Period, 16, 19, "Fall (Pos. Sol.)" ); Plot_Fa22Pos->Print("PDF_Plots/PbPt_Vs_Runs.pdf");
-    auto Plot_Sp23Inb = Plot_PbPt_Epoch( Period, 20, 23, "Spring" );           Plot_Sp23Inb->Print("PDF_Plots/PbPt_Vs_Runs.pdf)");
+    auto Plot_Su22    = Plot_PbPt_Epoch( Period, 1, 10, "Summer" );            //Plot_Su22->Print("PDF_Plots/PbPt_Vs_Runs.pdf(");
+    auto Plot_Fa22Neg = Plot_PbPt_Epoch( Period, 11, 15, "Fall (Neg. Sol.)" ); //Plot_Fa22Neg->Print("PDF_Plots/PbPt_Vs_Runs.pdf");
+    //auto Plot_Fa22Pos = Plot_PbPt_Epoch( Period, 16, 19, "Fall (Pos. Sol.)" ); Plot_Fa22Pos->Print("PDF_Plots/PbPt_Vs_Runs.pdf");
+    auto Plot_Sp23Inb = Plot_PbPt_Epoch( Period, 20, 23, "Spring" );           //Plot_Sp23Inb->Print("PDF_Plots/PbPt_Vs_Runs.pdf)");
+
+    // Now calculate the normalization factors
+
+    // Read in the just-calculated DIS PbPt values
+    auto DIS_PbPt = All_PbPt_Info();
+    //for( auto r : DIS_PbPt ) r.Print();
+
+    auto PNFs = Calculate_PNF( DIS_PbPt, Period, "Su22", "NH3", 1 );
+    PNFs = Calculate_PNF( DIS_PbPt, Period, "Su22", "NH3",-1 );
+
+    PNFs = Calculate_PNF( DIS_PbPt, Period, "Fa22Neg", "NH3", 1 );
+    PNFs = Calculate_PNF( DIS_PbPt, Period, "Fa22Neg", "NH3",-1 );
+
+    PNFs = Calculate_PNF( DIS_PbPt, Period, "Sp23Inb", "NH3", 1 );
+    PNFs = Calculate_PNF( DIS_PbPt, Period, "Sp23Inb", "NH3",-1 );
+
 
 /*
     // Hold all the relevant PbPt info

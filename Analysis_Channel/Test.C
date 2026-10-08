@@ -409,10 +409,54 @@ TCanvas* Linearity_DF_PF( string Target="NH3" ){
     return c;
 }
 
+// This function is used to calculate the elastic DF using elastic e-p scattering data from Noemie's code.
+// Sebastian's method of DF calculation is used here.
+void CalculateElasticDF( RunPeriod& RP, string Period, string Target, int targetPol){
+
+    vector<int> Epoch = RP.getElasticEpoch( Period, Target, targetPol );
+    vector<int> MissedRuns;
+
+    string epoch = "ERROR";
+    if( targetPol == 1 ) epoch = "Pos";
+    else if( targetPol == -1 ) epoch = "Neg";
+	
+    // Now start the loop for this particular epoch:
+    DataSet thisEpoch;
+
+    bool useElasticData = true;
+
+    thisEpoch.SetEpochValues( Period, Target, Epoch, MissedRuns, useElasticData ); // Read in the runs
+    thisEpoch.CalculateAvgXQ2( Period, Epoch, Target, true ); // Set the kinematic values for every bin
+    thisEpoch.CalculateDF( Period, false, true ); // Calculate DF and PF
+    string outTXT = "Output_Data/Elastic_DF_Data_"+ epoch +"_"+ Period;
+    thisEpoch.WriteToCSV( outTXT, Period, " " ); // Writes data to a text or CSV file
+
+    //thisEpoch.Print();
+
+}
+	//vector<int> getElasticEpoch(string Period, string Target, int targetPol) const{
 
 void Test(){
 
     RunPeriod Period; // Holds the information on all RGC runs
+
+
+    Q2_Bin_Bounds = {1.8, 1.923765, 2.056040, 2.197410, 2.348501, 2.509980, 2.682562, 2.867011, 3.064142, 3.274828, 3.5};
+
+    // Calculate the elastic DFs
+    CalculateElasticDF( Period, "Su22",    "NH3", 1 );
+    CalculateElasticDF( Period, "Su22",    "NH3",-1 );
+
+    CalculateElasticDF( Period, "Fa22Neg", "NH3", 1 );
+    CalculateElasticDF( Period, "Fa22Neg", "NH3",-1 );
+
+    CalculateElasticDF( Period, "Fa22Pos", "NH3", 1 );
+    CalculateElasticDF( Period, "Fa22Pos", "NH3",-1 );
+
+    CalculateElasticDF( Period, "Sp23Inb", "NH3", 1 );
+    CalculateElasticDF( Period, "Sp23Inb", "NH3",-1 );
+
+/*
 
     // Draw the summer DF data
     auto DF_Su22  = RunPeriodPlots( Period, 1, 10, "NH3", "Su22", "DF", "", true );
@@ -463,43 +507,8 @@ void Test(){
 
     auto DF_Linearity = Linearity_DF_PF();
     DF_Linearity->Print("PDF_Plots/DF_vs_PF_Plots.pdf");
-
+*/
 //TCanvas* RunPeriodPlots( RunPeriod& RP, int FirstEpoch, int LastEpoch, string Target, string Period, string DForPF, string BathOrCell="Bath" ){
 
-/*
-    DataSet Test;
-
-    cout << "Header file compiles.\n";
-
-    RunPeriod Period;
-
-    vector<int> Epoch2 = Period.getRunEpoch("P02");
-    vector<int> MissedRuns;
-    // Read in the data from epoch 2
-    Test.SetEpochValues( "Su22", "NH3", Epoch2, MissedRuns );
-
-    // Calculate the average x, Q2 bins for Epoch2..........
-    Test.CalculateAvgXQ2( "Su22", Epoch2, "NH3" );
-    Test.CalculateDF("Su22", true, true);
-
-    // Now make the DF and PF plots for the epoch:
-// TCanvas* PF_Legend_Plot( DataSet& AllData, string sector, string targetType, vector<double>& PFs, string Period="Default", bool useScaling =true, bool usePseudoData=true,
-// double ymin=0.48, double ymax=0.6, bool dummy=false ){
-
-// TCanvas* DF_Legend_Plot( DataSet& AllData, string sector, string targetType, string Period, bool useScaling=true, bool usePseudoData=true ){
-
-    vector<double> PFs = {0,0,0,0,0,0};
-
-    auto DF_Plt = DF_Legend_Plot( Test, "Epoch 2", "NH3", "Su22" );
-    auto PF_Plt = PF_Legend_Plot( Test, "Epoch 2", "NH3", PFs );
-
-    //Test.Print();
-
-    if( MissedRuns.size() > 0 ){
-	cout << "S*** F*****G D*RN IT!! Runs were missed! Missing runs:\n";
-	for(int run : MissedRuns ) cout <<"--> "<< run << endl;
-	cout << endl;
-    }
-*/
 
 }

@@ -32,6 +32,7 @@ double dC_l  = -0.0025;// + 0.0005;
 
 double lC = 1.678 * (1.0 - dC_l); // cm (length of carbon target)
 double LHe = 5.86 * (1.0 - dBath); // cm (length of LHe bath)
+double Lcell = 5.0 *(1.0 - dBath); // cm (length of target cell; assumed same contraction as bath; bath uses PTFE, cell PCTFE)
 double lCH = 3.18 * (1.0 - dPE_l); // cm (length of CH2 target)
 double lCD = 2.686;// cm (length of CD2 target)
 //double pC = 1.7926/(12.0); // mol/cm^3 (carbon target density)
@@ -120,7 +121,7 @@ vector<double> CalculateTruePt( int run, double pbpt, double pbpt_stat_err ){
 // Calculates the NH3 packing fraction for each kinematic bin
 double NH3PF(double nA, double nCH, double nC, double nET, double nF){
 
-	if( nA <= 0 || nCH <= 0 || nET <= 0 || nF <= 0 || nC <= 0 ) return 0;
+	if( nA < 0 || nCH < 0 || nET < 0 || nF < 0 || nC < 0 ) return 0;
 
 	double numerator = G*(nA - nET);
 	double denominator = nCH + D*nC + E*nET + F*nF;
@@ -135,7 +136,7 @@ double NH3PF(double nA, double nCH, double nC, double nET, double nF){
 // Calculates the error in the NH3 PF for each kinematic bin
 double NH3PFError(double nA, double nCH, double nC, double nET, double nF, double dnA, double dnCH, double dnC, double dnET, double dnF){
 
-	if( nA <= 0 || nCH <= 0 || nET <= 0 || nF <= 0 || nC <= 0 ) return 0;
+	if( nA < 0 || nCH < 0 || nET < 0 || nF < 0 || nC < 0 ) return 0;
 
 	double denom = nCH + D*nC + E*nET + F*nF;
 	if( denom != 0.0 ){
@@ -153,7 +154,7 @@ double NH3PFError(double nA, double nCH, double nC, double nET, double nF, doubl
 // Calculates the ND3 packing fraction for each kinematic bin
 double ND3PF(double nD, double nCD, double nC, double nET, double nF){
 
-	if( nD <= 0 || nCD <= 0 || nET <= 0 || nF <= 0 || nC <= 0 ) return 0;
+	if( nD < 0 || nCD < 0 || nET < 0 || nF < 0 || nC < 0 ) return 0;
 
 	double numerator = GG*(nD - nET);
 	double denominator = nCD + DD*nC + EE*nET + FF*nF;
@@ -168,7 +169,7 @@ double ND3PF(double nD, double nCD, double nC, double nET, double nF){
 // Calculates the error in the ND3 PF for each kinematic bin
 double ND3PFError(double nD, double nCD, double nC, double nET, double nF, double dnD, double dnCD, double dnC, double dnET, double dnF){
 
-	if( nD <= 0 || nCD <= 0 || nET <= 0 || nF <= 0 || nC <= 0 ) return 0;
+	if( nD < 0 || nCD < 0 || nET < 0 || nF < 0 || nC < 0 ) return 0;
 
 	double denom = nCD + DD*nC + EE*nET + FF*nF;
 	if( denom != 0.0 ){
@@ -187,7 +188,7 @@ double ND3PFError(double nD, double nCD, double nC, double nET, double nF, doubl
 // Calculates the dilution factor for NH3 targets using raw statistics only
 double NH3DF(double nA, double nCH, double nC, double nET, double nF){
 
-	if( nA <= 0 || nCH <= 0 || nET <= 0 || nF <= 0 || nC <= 0 ) return 0;
+	if( nA < 0 || nCH < 0 || nET < 0 || nF < 0 || nC < 0 ) return 0;
 
 	double numerator = (nA - nET)*(nCH + A*nC + B*nET + C*nF);
 	double denominator = nA*(nCH + D*nC + E*nET + F*nF);
@@ -198,7 +199,7 @@ double NH3DF(double nA, double nCH, double nC, double nET, double nF){
 
 double NH3DFError(double nA, double nCH, double nC, double nET, double nF, double dnA, double dnCH, double dnC, double dnET, double dnF){
 
-  if( nA <= 0 || nCH <= 0 || nET <= 0 || nF <= 0 || nC <= 0 ) return 0;
+  if( nA < 0 || nCH < 0 || nET < 0 || nF < 0 || nC < 0 ) return 0;
 
   double numTerm = nCH + A*nC + B*nET + C*nF; // Not the full numerator, missing multiplication by (nA - nET)
   double denTerm = nCH + D*nC + E*nET + F*nF; // Not the full denominator, missing the multiplication by nA 
@@ -602,6 +603,13 @@ class RunPeriod{
 	    cout <<"Couldn't find run "<< run <<". Check inputs.\n";
 	    return "N/A";
 	}
+	string getEpoch(int run) const{ 
+	    for(size_t i=0; i<Runs.size(); i++){
+		if( Runs[i].getRunNumber() == run ) return Runs[i].getEpoch();
+	    }
+	    cout <<"Couldn't find the epoch for "<< run <<". Check inputs.\n";
+	    return "N/A";
+	}
 	int getHWPStatus(int run) const{ 
 	    for(size_t i=0; i<Runs.size(); i++){
 		if( Runs[i].getRunNumber() == run ) return Runs[i].getHWPStatus();
@@ -636,17 +644,33 @@ class RunPeriod{
 	    if( RunsInEpoch.size() == 0 ) cout << "Couldn't find runs for epoch "<<epoch<<endl;
 	    return RunsInEpoch;
 	}
-	vector<int> getSubEpoch(string epoch, int targetPol) const{
+
+	// This is used to get all the runs used in the elastic epochs. For example, it selects all positive
+	// or negative runs in a given run period
+	vector<int> getElasticEpoch(string Period, string Target, int targetPol) const{
+
 	    // By selecting the sign of the target polarization, you can select the subset of runs from the
 	    // epoch that correspond to the sign of the target polarization
-	    vector<int> RunsInSubEpoch;
-	    for( auto run : Runs ){
-		if( run.getEpoch() == epoch && targetPol < 0 ) RunsInSubEpoch.push_back( run.getRunNumber() );
-		else if( run.getEpoch() == epoch && targetPol > 0) RunsInSubEpoch.push_back( run.getRunNumber() );
+	    vector<int> ElasticEpoch;
+
+	    if( abs(targetPol) != 1 ){
+		cout <<"ERROR: Proper usage of 'getElasticEpoch' is targetPol = +\\- 1. Check inputs.\n";
+		return ElasticEpoch;
 	    }
-	    if( RunsInSubEpoch.size() == 0 ) cout << "Couldn't find runs for epoch "<< epoch <<" with P_target ~ "<< targetPol << endl;
-	    return RunsInSubEpoch;
+
+	    for( auto run : Runs ){
+		string targ = run.getTargetType();
+		int thisRun = run.getRunNumber();
+	        double thisTPol = run.getTargetPolarization();
+		if( Period == "Su22" && thisRun > 16100 && thisRun < 16800 && thisTPol * 10*targetPol > 0 && targ == Target ) ElasticEpoch.push_back( thisRun );
+		else if( Period == "Fa22Neg" && thisRun > 16800 && thisRun < 17185 && thisTPol * 10*targetPol > 0 && targ == Target ) ElasticEpoch.push_back( thisRun );
+		else if( Period == "Fa22Pos" && thisRun > 17185 && thisRun < 17450 && thisTPol * 10*targetPol > 0 && targ == Target ) ElasticEpoch.push_back( thisRun );
+		else if( Period == "Sp23Inb" && thisRun > 17450 && thisRun <=17768 && thisTPol * 10*targetPol > 0 && targ == Target ) ElasticEpoch.push_back( thisRun );
+	    }
+	    if( ElasticEpoch.size() == 0 ) cout << "Couldn't find runs for run period "<< Period <<" with P_target ~ "<< targetPol << endl;
+	    return ElasticEpoch;
 	}
+
 	vector<int> getDataSet(string Dataset, string TorPol, string SolPol) const{
 	    // Returns the subset of runs consisting of this dataset, torus polarity, solenoid polarity
 	    vector<int> RunsInDataSet;
@@ -861,17 +885,11 @@ vector<double> PT_Vals(int run, RunPeriod& Period){
 }
 
 // This vector contains the bin boundaries for the Q2 bins
-const vector<double> Q2_Bin_Bounds = { /*1.0, 1.3094, 1.5632, 1.8661,*/ 2.2277,
-	2.6594, 3.1747, 3.7899, 4.5243, 5.4009, 6.4475, 7.6969, 9.1884, 10.9689};
-//const vector<double> Q2_Bin_Bounds = { 0.9188, 1.0969, 1.3094, 1.5632, 1.8661, 2.2277,
+//const vector<double> Q2_Bin_Bounds = { /*1.0, 1.3094, 1.5632, 1.8661,*/ 2.2277,
 //	2.6594, 3.1747, 3.7899, 4.5243, 5.4009, 6.4475, 7.6969, 9.1884, 10.9689};
 
-// This vector contains the bin boundaries for the x bins
-//const vector<double> X_Bin_Bounds = {0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45,
-//	0.5, 0.55, 0.6, 0.65, 0.7, 0.75};
-//const vector<double> X_Bin_Bounds = {   0.0875, 0.1125, 0.1375, 0.1625, 0.1875, 0.2125, 0.2375, 0.2625,
-//	0.2875, 0.3125, 0.3375, 0.3625, 0.3875, 0.4125, 0.4375, 0.4625, 0.4875, 0.5125, 0.5375, 0.5625, 0.5875, 
-//	0.6125, 0.6375, 0.6625, 0.6875, 0.7125, 0.7375, 0.7625, 0.7875 };
+vector<double> Q2_Bin_Bounds = { /*1.0, 1.3094, 1.5632, 1.8661,*/ 2.2277,
+	2.6594, 3.1747, 3.7899, 4.5243, 5.4009, 6.4475, 7.6969, 9.1884, 10.9689};
 
 const vector<double> X_Bin_Bounds = {0.075, 0.1, 0.125, 0.15, 0.175, 0.2, 0.225, 0.25, 0.275,
 	0.3, 0.325, 0.35, 0.375, 0.4, 0.425, 0.45, 0.475,
@@ -1166,7 +1184,7 @@ class Bin{
 		double nF = F_Counts.getNt();   double fF = F_Counts.getFCt();
 
 		// Calculate NH3 dilution factor for this bin
-		if( fA>0 && fCH>0 && fC>0 && fET>0 && fF>0 && nA>0 && nCH>0 && nC>0 && nET>0 && nF>0 ){
+		if( fA>0 && fCH>0 && fC>0 && fET>0 && fF>0 && nA>0 && nCH>0 && nC>0 && nET>0 /*&& nF>0*/ ){
 			// Propagate the errors of the pseudo data, if applicable
 			double ETsf = 1.0; // Factor used to make the radiation length correction to the empty target
 			double scale_nET = nET; double scale_nF = nF; // Raw counts used for scaling the ET and F counts
@@ -1181,16 +1199,21 @@ class Bin{
 			    errF  = (1.0/fF )*sqrt( ScaleSol*scale_nF  + (pow(scale_nF /ScaleSol,2))*pow(ScaleSolerr,2) );
 			    //cout << "Set the solenoid scaling factor for NH3 data.\n";
 			}
+
 			double dfnh3 = NH3DF( nA/fA, nCH/fCH, nC/fC, ETsf*scale_nET/fET, scale_nF/fF );
 			double errdfnh3 = NH3DFError( nA/fA, nCH/fCH, nC/fC, ETsf*scale_nET/fET, scale_nF/fF, sqrt(nA)/fA, sqrt(nCH)/fCH, sqrt(nC)/fC, ETsf*errET, errF );
 
 			double pfnh3 = NH3PF( nA/fA, nCH/fCH, nC/fC, ETsf*scale_nET/fET, scale_nF/fF );
 			double errpfnh3 = NH3PFError( nA/fA, nCH/fCH, nC/fC, ETsf*scale_nET/fET, scale_nF/fF, sqrt(nA)/fA, sqrt(nCH)/fCH, sqrt(nC)/fC, ETsf*errET, errF );
 
+			//cout <<"DF = "<< dfnh3 <<" +- "<< errdfnh3 <<", PF = "<< pfnh3 <<" +- "<< errpfnh3 << endl;
+			//cout <<  nA/fA <<"  "<< nCH/fCH <<"  "<< nC/fC <<"  "<< ETsf*scale_nET/fET <<"  "<< scale_nF/fF << endl; 
+			//cout <<  nA <<"  "<< nCH <<"  "<< nC <<"  "<< ETsf*scale_nET <<"  "<< scale_nF << endl; 
+
 			if( dfnh3 > 0.0 && errdfnh3 > 0.0 && pfnh3 > 0.0 && errpfnh3 > 0.0 ){
 			    DF_NH3 = dfnh3; ErrDF_NH3 = errdfnh3;
 			    PF_bath_NH3 = pfnh3; ErrPF_bath_NH3 = errpfnh3;
-			    PF_cell_NH3 = (LHe / 5.0)*pfnh3; ErrPF_cell_NH3 = (LHe / 5.0)*errpfnh3;
+			    PF_cell_NH3 = (LHe / Lcell)*pfnh3; ErrPF_cell_NH3 = (LHe / Lcell)*errpfnh3;
 /*
 			    cout << endl;
 			    cout <<"Q2 = "<< Q2_Mid <<", X = "<< X_Mid <<"\n";
@@ -1201,6 +1224,8 @@ class Bin{
 			}
 			else{
 			    cout <<"WARNING in CalculateDF() for bin X = "<< X_Mid <<", Q2 = "<< Q2_Mid << endl;
+			    cout <<"DF = "<< dfnh3 <<" +- "<< errdfnh3 <<", PF = "<< pfnh3 <<" +- "<< errpfnh3 << endl;
+			    cout <<  nA/fA <<"  "<< nCH/fCH <<"  "<< nC/fC <<"  "<< ETsf*scale_nET/fET <<"  "<< scale_nF/fF << endl;
 			    cout <<"Zero or negative value for NH3 DF calculated. This value was omitted...\n";
 			}
 		}
@@ -1242,7 +1267,7 @@ class Bin{
 			if( dfnd3 > 0.0 && errdfnd3 > 0.0 && pfnd3 > 0.0 && errpfnd3 > 0.0 ){
 			    DF_ND3 = dfnd3; ErrDF_ND3 = errdfnd3;
 			    PF_bath_ND3 = pfnd3; ErrPF_bath_ND3 = errpfnd3;
-			    PF_cell_ND3 = (LHe / 5.0)*pfnd3; ErrPF_cell_ND3 = (LHe / 5.0)*errpfnd3;
+			    PF_cell_ND3 = (LHe / Lcell)*pfnd3; ErrPF_cell_ND3 = (LHe / Lcell)*errpfnd3;
 //			    cout << endl;
 /*
 			    cout <<"Q2 = "<< Q2_Mid <<", X = "<< X_Mid <<"\n";
@@ -2190,9 +2215,51 @@ class DataSet{
 	    return FCchargeIsSet; // If a file was successfully opened, this will be true.
 	}
 
-	// This function sets all the relevant info for a given run period and a given epoch
+	// This is a special case where elastic data is being read in
+	bool AddToBinsElastic( string filePath, string targtype ){
+	    ifstream fin(filePath.c_str());
+	    bool FCchargeIsSet = false; // Tracks whether or not the FC charge has been appended to the data set
+	    if( !fin.fail() ){
+		string line;
+		getline(fin,line); // throw away header row
+		//Q2_Min   Q2_Max   X_Min   X_Max   NP_Counts   NM_Counts   FC_P_Charge   FC_M_Charge
+		while(getline(fin,line)){
+		    stringstream sin(line);
+		    //3.38465  11.0347  0.225091  52  41  37242.6  37201
+		    double q2_avg, theta_avg, A_el, Np_Counts, Nm_Counts, FCp, FCm;
+		    sin >> q2_avg >> theta_avg >> A_el >> Np_Counts >> Nm_Counts >> FCp >> FCm;
+		    // Because the data is elastic, x=1, so an arbitrary xbin stores the data
+		    double xBin = (X_Bin_Bounds[0] + X_Bin_Bounds[1]) / 2.0;
+		    if( !FCchargeIsSet ){ 
+			for(size_t i=0; i<AllBins.size(); i++){
+			    for(size_t j=0; j<AllBins[i].size(); j++){
+			        AllBins[i][j].AddFCCharge(FCp, FCm, 0, targtype);
+			    }
+			}
+			FCchargeIsSet = true;
+		    }
+		    for(size_t i=0; i<AllBins.size(); i++){ // Q2 bin loop
+		        for(size_t j=0; j<AllBins[i].size(); j++){
+			    if( AllBins[i][j].IsInBin( q2_avg, xBin ) ){
+			        AllBins[i][j].AddCounts( Np_Counts, Nm_Counts, 0, targtype, xBin, q2_avg );
+			    }
+			}
+		    }
+		}
+	    }
+	    else{
+		//cout << "Couldn't open file path " << filePath <<".\n";
+		//cout << "Please check path and try again.\n";
+	    }
+	    fin.close();
+	    return FCchargeIsSet; // If a file was successfully opened, this will be true.
+	}
+
+	// This function sets all the relevant info for a given run period and a given epoch.
+	// If the boolean "useElasticData" is true, then files will be read in from the "Elastic_Text_Files"
+	// directory to use Noemie's data.
 	// FIXME: Add functionality for reading in the CD2 data and the scaled CD2 data for the ND3 calculations...
-	void SetEpochValues( string Period, string Target, vector<int>& Epoch, vector<int>& MissedRuns ){
+	void SetEpochValues( string Period, string Target, vector<int>& Epoch, vector<int>& MissedRuns, bool useElasticData=false ){
 		
 	    // Select the background runs that will be used based on the run period
 	    vector<int> C_Bkg, CH2_Bkg, ET_Bkg, F_Bkg, CD2_Bkg;
@@ -2221,33 +2288,86 @@ class DataSet{
 	    // Now add the data from the background runs and the given epoch vector
 	    // NH3/ND3 data
 	    for(int run : Epoch ){
-		string filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/"+ Target +"_"+ to_string(run) +"_DF_Data.txt";
-		if( !this->AddToBins( filePath, Target ) ) MissedRuns.push_back( run );
+		//string filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/"+ Target +"_"+ to_string(run) +"_DF_Data.txt";
+		string filePath;
+		if( !useElasticData ){
+		    filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/"+ Target +"_"+ to_string(run) +"_DF_Data.txt";
+		    if( !this->AddToBins( filePath, Target ) ) MissedRuns.push_back( run );
+		}
+		else{
+		    filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Elastic_Text_Files/"+ Target +"_"+ to_string(run) +"_Elastic.txt";
+		    if( !this->AddToBinsElastic( filePath, Target ) ) MissedRuns.push_back( run );
+		}
 	    }
     	    // CH2 data
 	    for(int run : CH2_Bkg ){
-		string filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/CH2_"+ to_string(run) +"_DF_Data.txt";
-		if( !this->AddToBins( filePath, "CH2" ) ) MissedRuns.push_back( run );
+		//string filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/CH2_"+ to_string(run) +"_DF_Data.txt";
+		//if( !this->AddToBins( filePath, "CH2" ) ) MissedRuns.push_back( run );
+		string filePath;
+		if( !useElasticData ){
+		    filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/CH2_"+ to_string(run) +"_DF_Data.txt";
+		    if( !this->AddToBins( filePath, "CH2" ) ) MissedRuns.push_back( run );
+		}
+		else{
+		    filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Elastic_Text_Files/CH2_"+ to_string(run) +"_Elastic.txt";
+		    if( !this->AddToBinsElastic( filePath, "CH2" ) ) MissedRuns.push_back( run );
+		}
 	    }
 	    // Carbon data
 	    for(int run : C_Bkg ){
-		string filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/C_"+ to_string(run) +"_DF_Data.txt";
-		if( !this->AddToBins( filePath, "C" ) ) MissedRuns.push_back( run );
+		//string filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/C_"+ to_string(run) +"_DF_Data.txt";
+		//if( !this->AddToBins( filePath, "C" ) ) MissedRuns.push_back( run );
+		string filePath;
+		if( !useElasticData ){
+		    filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/C_"+ to_string(run) +"_DF_Data.txt";
+		    if( !this->AddToBins( filePath, "C" ) ) MissedRuns.push_back( run );
+		}
+		else{
+		    filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Elastic_Text_Files/C_"+ to_string(run) +"_Elastic.txt";
+		    if( !this->AddToBinsElastic( filePath, "C" ) ) MissedRuns.push_back( run );
+		}
 	    }
 	    // ET data
 	    for(int run : ET_Bkg ){
-		string filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/ET_"+ to_string(run) +"_DF_Data.txt";
-		if( !this->AddToBins( filePath, "ET" ) ) MissedRuns.push_back( run );
+		//string filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/ET_"+ to_string(run) +"_DF_Data.txt";
+		//if( !this->AddToBins( filePath, "ET" ) ) MissedRuns.push_back( run );
+		string filePath;
+		if( !useElasticData ){
+		    filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/ET_"+ to_string(run) +"_DF_Data.txt";
+		    if( !this->AddToBins( filePath, "ET" ) ) MissedRuns.push_back( run );
+		}
+		else{
+		    filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Elastic_Text_Files/ET_"+ to_string(run) +"_Elastic.txt";
+		    if( !this->AddToBinsElastic( filePath, "ET" ) ) MissedRuns.push_back( run );
+		}
 	    }
 	    // Foil data
 	    for(int run : F_Bkg ){
-		string filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/F_"+ to_string(run) +"_DF_Data.txt";
-		if( !this->AddToBins( filePath, "F" ) ) MissedRuns.push_back( run );
+		//string filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/F_"+ to_string(run) +"_DF_Data.txt";
+		//if( !this->AddToBins( filePath, "F" ) ) MissedRuns.push_back( run );
+		string filePath;
+		if( !useElasticData ){
+		    filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/F_"+ to_string(run) +"_DF_Data.txt";
+		    if( !this->AddToBins( filePath, "F" ) ) MissedRuns.push_back( run );
+		}
+		else{
+		    filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Elastic_Text_Files/F_"+ to_string(run) +"_Elastic.txt";
+		    if( !this->AddToBinsElastic( filePath, "F" ) ) MissedRuns.push_back( run );
+		}
 	    }
 /*	    // CD2 data
 	    for(int run : CD2_Bkg ){
-		string filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/"+ Target +"_"+ to_string(run) +"_DF_Data.txt";
-		if( !this->AddToBins( filePath, "CD2" ) ) MissedRuns.push_back( run );
+		//string filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/"+ Target +"_"+ to_string(run) +"_DF_Data.txt";
+		//if( !this->AddToBins( filePath, "CD2" ) ) MissedRuns.push_back( run );
+		string filePath;
+		if( !useElasticData ){
+		    filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Text_Files/"+ Target +"_"+ to_string(run) +"_DF_Data.txt";
+		    if( !this->AddToBins( filePath, "CD2" ) ) MissedRuns.push_back( run );
+		}
+		else{
+		    filePath = "/w/hallb-scshelf2102/clas12/holmberg/Spin_Structure/Latest_Skims/Elastic_Text_Files/"+ Target +"_"+ to_string(run) +"_Elastic.txt";
+		    if( !this->AddToBinsElastic( filePath, "CD2" ) ) MissedRuns.push_back( run );
+		}
 	    }*/
 	   
 	    if( MissedRuns.size() > 0 ){
@@ -2260,7 +2380,7 @@ class DataSet{
 
         // "Period" is the run period ("Su22", "Fa22Pos", etc.), and the vector is all the NH3 or ND3 runs in the epoch.
         // To calculate the average values across all runs
-	void CalculateAvgXQ2( string Period, vector<int>& Epoch, string Target ){
+	void CalculateAvgXQ2( string Period, vector<int>& Epoch, string Target, bool useElasticData=false ){
 
 	    // First, read in for each target type
 	    // Number of x and Q2 bins
@@ -2290,6 +2410,143 @@ class DataSet{
 		cout <<"       No average values of X, Q2 were set!\n";
 		return; // Kills the function
 	    }
+
+	    // This section of the code is called for setting the bins in the case of elastic scattering data.
+	    // FIXME: Add CD2 loop to this
+	    /*************************************** ELASTIC DATA EVALUATION *****************************************/
+	    if( useElasticData ){
+		// Number of elastic Q2 bins to consider
+		double nQ2bins = Q2_Bin_Bounds.size()-1;
+		// Get the total number of counts to take the stat-weighted average of the kinematics from each run separately
+		vector<double> Q2_All(nQ2bins, 0); vector<double> Q2_Ammonia(nQ2bins, 0); vector<double> Q2_C  (nQ2bins, 0); vector<double> Q2_CH2(nQ2bins, 0);
+		vector<double> Q2_ET(nQ2bins, 0);  vector<double> Q2_F(nQ2bins, 0);       vector<double> Q2_CD2(nQ2bins, 0);
+
+		vector<double> Counts_All(nQ2bins, 0); vector<double> Counts_Ammonia(nQ2bins, 0); vector<double> Counts_C  (nQ2bins, 0); vector<double> Counts_CH2(nQ2bins, 0);
+		vector<double> Counts_ET(nQ2bins, 0);  vector<double> Counts_F(nQ2bins, 0);       vector<double> Counts_CD2(nQ2bins, 0);
+		// First loop over the NH3/ND3 data
+		for(int run : Epoch){
+		    // Loop thru each kinematic bin once the file is opened
+		    ifstream fin( string("../Latest_Skims/Elastic_Text_Files/"+ Target +"_"+ to_string(run) +"_Elastic.txt") );
+		    if( fin.fail() ){ cout <<"ERROR: Couldn't find elastic file for "<< Target <<" run "<< run <<". Aborting Avg x, Q2 calculation...\n"; return; }
+		    string line;
+		    getline(fin,line); // Throw away header row
+		    //Q2_Mean   Theta_Mean   A_el   N+   N-   FC+   FC-
+		    int it = 0; // iterator for tracking the vectors
+		    while( getline( fin, line ) ){
+			double Q2_Mean, Theta_Mean, A_el, Np, Nm, FCp, FCm;
+			stringstream sin(line);
+			sin >> Q2_Mean >> Theta_Mean >> A_el >> Np >> Nm >> FCp >> FCm;
+			if( Np + Nm > 0 ){
+			    Q2_All[it] += (Nm + Np)*Q2_Mean; Q2_Ammonia[it] += (Nm + Np)*Q2_Mean;
+			    Counts_All[it] += (Nm + Np); Counts_Ammonia[it] += (Nm + Np);
+			}
+			it++;
+		    }
+		    fin.close();
+		}
+		// Loop over CH2 data
+		for(int run : CH2_Bkg){
+		    // Loop thru each kinematic bin once the file is opened
+		    ifstream fin( string("../Latest_Skims/Elastic_Text_Files/CH2_"+ to_string(run) +"_Elastic.txt") );
+		    if( fin.fail() ){ cout <<"ERROR: Couldn't find elastic file for CH2 run "<< run <<". Aborting Avg x, Q2 calculation...\n"; return; }
+		    string line;
+		    getline(fin,line); // Throw away header row
+		    //Q2_Mean   Theta_Mean   A_el   N+   N-   FC+   FC-
+		    int it = 0; // iterator for tracking the vectors
+		    while( getline( fin, line ) ){
+			double Q2_Mean, Theta_Mean, A_el, Np, Nm, FCp, FCm;
+			stringstream sin(line);
+			sin >> Q2_Mean >> Theta_Mean >> A_el >> Np >> Nm >> FCp >> FCm;
+			if( Np + Nm > 0 ){
+			    Q2_All[it] += (Nm + Np)*Q2_Mean; Q2_CH2[it] += (Nm + Np)*Q2_Mean;
+			    Counts_All[it] += (Nm + Np); Counts_CH2[it] += (Nm + Np);
+			}
+			it++;
+		    }
+		    fin.close();
+		}
+		// Loop over C data
+		for(int run : C_Bkg){
+		    // Loop thru each kinematic bin once the file is opened
+		    ifstream fin( string("../Latest_Skims/Elastic_Text_Files/C_"+ to_string(run) +"_Elastic.txt") );
+		    if( fin.fail() ){ cout <<"ERROR: Couldn't find elastic file for C run "<< run <<". Aborting Avg x, Q2 calculation...\n"; return; }
+		    string line;
+		    getline(fin,line); // Throw away header row
+		    //Q2_Mean   Theta_Mean   A_el   N+   N-   FC+   FC-
+		    int it = 0; // iterator for tracking the vectors
+		    while( getline( fin, line ) ){
+			double Q2_Mean, Theta_Mean, A_el, Np, Nm, FCp, FCm;
+			stringstream sin(line);
+			sin >> Q2_Mean >> Theta_Mean >> A_el >> Np >> Nm >> FCp >> FCm;
+			if( Np + Nm > 0 ){
+			    Q2_All[it] += (Nm + Np)*Q2_Mean; Q2_C[it] += (Nm + Np)*Q2_Mean;
+			    Counts_All[it] += (Nm + Np); Counts_C[it] += (Nm + Np);
+			}
+			it++;
+		    }
+		    fin.close();
+		}
+		// Loop over ET data
+		for(int run : ET_Bkg){
+		    // Loop thru each kinematic bin once the file is opened
+		    ifstream fin( string("../Latest_Skims/Elastic_Text_Files/ET_"+ to_string(run) +"_Elastic.txt") );
+		    if( fin.fail() ){ cout <<"ERROR: Couldn't find elastic file for ET run "<< run <<". Aborting Avg x, Q2 calculation...\n"; return; }
+		    string line;
+		    getline(fin,line); // Throw away header row
+		    //Q2_Mean   Theta_Mean   A_el   N+   N-   FC+   FC-
+		    int it = 0; // iterator for tracking the vectors
+		    while( getline( fin, line ) ){
+			double Q2_Mean, Theta_Mean, A_el, Np, Nm, FCp, FCm;
+			stringstream sin(line);
+			sin >> Q2_Mean >> Theta_Mean >> A_el >> Np >> Nm >> FCp >> FCm;
+			if( Np + Nm > 0 ){
+			    Q2_All[it] += (Nm + Np)*Q2_Mean; Q2_ET[it] += (Nm + Np)*Q2_Mean;
+			    Counts_All[it] += (Nm + Np); Counts_ET[it] += (Nm + Np);
+			}
+			it++;
+		    }
+		    fin.close();
+		}
+		// Loop over F data
+		for(int run : F_Bkg){
+		    // Loop thru each kinematic bin once the file is opened
+		    ifstream fin( string("../Latest_Skims/Elastic_Text_Files/F_"+ to_string(run) +"_Elastic.txt") );
+		    if( fin.fail() ){ cout <<"ERROR: Couldn't find elastic file for F run "<< run <<". Aborting Avg x, Q2 calculation...\n"; return; }
+		    string line;
+		    getline(fin,line); // Throw away header row
+		    //Q2_Mean   Theta_Mean   A_el   N+   N-   FC+   FC-
+		    int it = 0; // iterator for tracking the vectors
+		    while( getline( fin, line ) ){
+			double Q2_Mean, Theta_Mean, A_el, Np, Nm, FCp, FCm;
+			stringstream sin(line);
+			sin >> Q2_Mean >> Theta_Mean >> A_el >> Np >> Nm >> FCp >> FCm;
+			if( Np + Nm > 0 ){
+			    Q2_All[it] += (Nm + Np)*Q2_Mean; Q2_F[it] += (Nm + Np)*Q2_Mean;
+			    Counts_All[it] += (Nm + Np); Counts_F[it] += (Nm + Np);
+			}
+			it++;
+		    }
+		    fin.close();
+		}
+
+		// Now set the average values.
+		// For elastics, I just set to the first x bin
+		double xBin = (X_Bin_Bounds[0] + X_Bin_Bounds[1]) / 2.0;
+		for( int q=0; q<nQ2Bins; q++ ){
+		    if( Counts_All[q]     !=0 ){ double avgQ2_All     = Q2_All[q] / Counts_All[q];         this->SetAvgXQ2( "All", xBin, avgQ2_All ); }
+		    if( Counts_Ammonia[q] !=0 ){ double avgQ2_Ammonia = Q2_Ammonia[q] / Counts_Ammonia[q]; this->SetAvgXQ2( Target, xBin, avgQ2_Ammonia ); }
+		    if( Counts_CH2[q]     !=0 ){ double avgQ2_CH2     = Q2_CH2[q] / Counts_CH2[q];         this->SetAvgXQ2( "CH2", xBin, avgQ2_CH2 ); }
+		    if( Counts_C[q]       !=0 ){ double avgQ2_C       = Q2_C[q] / Counts_C[q];             this->SetAvgXQ2( "C", xBin, avgQ2_C ); }
+		    if( Counts_ET[q]      !=0 ){ double avgQ2_ET      = Q2_ET[q] / Counts_ET[q];           this->SetAvgXQ2( "ET", xBin, avgQ2_ET ); }
+		    if( Counts_F[q]       !=0 ){ double avgQ2_F       = Q2_F[q] / Counts_F[q];             this->SetAvgXQ2( "F", xBin, avgQ2_F ); }
+		    //if( Counts_CD2[q]   !=0 ){ double avgQ2_CD2     = Q2_CD2[q] / Counts_CD2[q];         this->SetAvgXQ2( "CD2", xBin, avgQ2_CD2 ); }
+
+		}
+		cout << "Finished reading all elastic data for setting average Q2 values.\n";
+		return; // Kills the function to ignore the DIS stuff below...
+	    }
+
+	    /****************************************** DIS DATA EVALUATION ******************************************/
 
 	    // This stores the average value of Q2 for each of the x, Q2 bins across ALL target types in the files
 	    TProfile2D* Q2BinData = new TProfile2D({"Q2BinData","Q2 Bin Data; Q2 [GeV^{2}]; X", nQ2Bins, Q2_Bin_Bounds.data(), nXBins, X_Bin_Bounds.data()});
