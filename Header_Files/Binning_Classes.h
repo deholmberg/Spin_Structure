@@ -27,6 +27,9 @@ double dA = -0.05; // Variation on ammonia density
 double dPE_r = 0.0173 / 0.92;
 double dPE_l = 0.0183 / 0.92;
 
+double dDPE_r = 0.018  / 0.92;
+double dDPE_l = 0.0187 / 0.92;
+
 double dC_r  = -0.0016;// + 0.0005;
 double dC_l  = -0.0025;// + 0.0005;
 
@@ -34,17 +37,13 @@ double lC = 1.678 * (1.0 - dC_l); // cm (length of carbon target)
 double LHe = 5.86 * (1.0 - dBath); // cm (length of LHe bath)
 double Lcell = 5.0 *(1.0 - dBath); // cm (length of target cell; assumed same contraction as bath; bath uses PTFE, cell PCTFE)
 double lCH = 3.18 * (1.0 - dPE_l); // cm (length of CH2 target)
-double lCD = 2.686;// cm (length of CD2 target)
-//double pC = 1.7926/(12.0); // mol/cm^3 (carbon target density)
-//double pC = 1.7926/(12.0*pow((1.0-dLc),1) ); // mol/cm^3 (carbon target density)
+double lCD = 2.686 * (1.0 - dDPE_l) ;// cm (length of CD2 target)
 double pC = 1.7926/(12.0*pow((1.0 - dC_r),2) * (1.0 - dC_l) ); // mol/cm^3 (carbon target density)
 
-//double pCH = 0.9425/(14.027); // mol/cm^3 (CH2 target density)
 double pCH = 0.9425/(14.027 * pow((1.0-dPE_r),2) * (1.0 - dPE_l) ); // mol/cm^3 (CH2 target density)
 
-double pCD = 1.0979/(16.039); // mol/cm^3 (CD2 target density)
+double pCD = 1.0979/(16.039 * pow((1.0-dDPE_r),2) * (1.0 - dDPE_l)); // mol/cm^3 (CD2 target density)
 double pA = 0.867/(17.031); // mol/cm^3 (NH3 target density)
-//double pA = (1.0 + dA)*0.867/(17.031); // mol/cm^3 (NH3 target density)
 
 double pD = 1.007/(20.048); // mol/cm^3 (ND3 target density)
 
@@ -808,16 +807,23 @@ class RunPeriod{
 		int run = Runs[i].getRunNumber();
 		double thisTPol = Runs[i].getTargetPolarization();
 		string targ = Runs[i].getTargetType();
+		if(      targ == "Empty" ) targ = "ET";
+		else if( targ == "Foil" ) targ = "F";
+
+		// Use a boolean to check if the target passes
+		bool TargetCheck = false;
+		if( Target == "Unpol" && ( targ == "C" || targ == "CH2" || targ == "ET" || targ == "F" || targ == "CD2") ) TargetCheck = true;
+		else TargetCheck = Target == targ;
 
 		int intTPol = 0;
 		if( thisTPol < 0 ) intTPol = -1;
 		else if( thisTPol > 0 ) intTPol = 1; // intTPol stays zero if it's unpolarized
 
-		if( DataSet == "Su22" && Target == targ && run <= 16772 && HWPstatus == Runs[i].getHWPStatus() && TPolSign == intTPol ) AllGoodRuns.push_back( run );
-		else if( DataSet == "Fa22Neg" && Target == targ && run > 16800 && run <= 17183 && HWPstatus == Runs[i].getHWPStatus() && TPolSign == intTPol ) AllGoodRuns.push_back( run );
-		else if( DataSet == "Fa22Pos" && Target == targ && run >= 17188 && run < 17450 && HWPstatus == Runs[i].getHWPStatus() && TPolSign == intTPol ) AllGoodRuns.push_back( run );
-		else if( DataSet == "Sp23Inb" && Target == targ && run > 17450 && run <= 17768 && HWPstatus == Runs[i].getHWPStatus() && TPolSign == intTPol ) AllGoodRuns.push_back( run );
-		else if( DataSet == "Sp23Out" && Target == targ && run >= 17769 && HWPstatus == Runs[i].getHWPStatus() && TPolSign == intTPol ) AllGoodRuns.push_back( run );
+		if( DataSet == "Su22" && TargetCheck && run <= 16772 && HWPstatus == Runs[i].getHWPStatus() && TPolSign == intTPol ) AllGoodRuns.push_back( run );
+		else if( DataSet == "Fa22Neg" && TargetCheck && run > 16800 && run <= 17183 && HWPstatus == Runs[i].getHWPStatus() && TPolSign == intTPol ) AllGoodRuns.push_back( run );
+		else if( DataSet == "Fa22Pos" && TargetCheck && run >= 17188 && run < 17450 && HWPstatus == Runs[i].getHWPStatus() && TPolSign == intTPol ) AllGoodRuns.push_back( run );
+		else if( DataSet == "Sp23Inb" && TargetCheck && run > 17450 && run <= 17768 && HWPstatus == Runs[i].getHWPStatus() && TPolSign == intTPol ) AllGoodRuns.push_back( run );
+		else if( DataSet == "Sp23Out" && TargetCheck && run >= 17769 && HWPstatus == Runs[i].getHWPStatus() && TPolSign == intTPol ) AllGoodRuns.push_back( run );
 
 	    }
 	    if( AllGoodRuns.size() == 0 ) cout <<"ERROR: Couldn't find any "<< Target <<" runs for "<< DataSet <<", HWP = "<< HWPstatus <<", TPolSign = "<< TPolSign << endl;
@@ -3995,7 +4001,7 @@ class DataSet{
 	    int corrFactor = 0;
 	    if( NMR_Tpol < 0 ) corrFactor = -1;
 	    else if( NMR_Tpol > 0 ) corrFactor = 1; // Allow for corrFactor to be zero for error tracing purposes */
-	    int corrFactor = 1;
+	    int corrFactor = 1; 
 	    if( solPol > 0 ) corrFactor = -1;
 
 	    double numPbPt = 0.0; double denomPbPt = 0.0; // Numerator and denominator terms used for PbPt calculation

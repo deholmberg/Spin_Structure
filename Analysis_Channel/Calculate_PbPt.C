@@ -4,7 +4,7 @@
  *
  * Date Created: 9/25/2026
  *
- * Last Modified: 9/29/2026
+ * Last Modified: 10/8/2026
  *
  * Purpose:
  * This program calculates the DIS values of PbPt using the DFs from "Test.C".
@@ -19,12 +19,26 @@
 
 using namespace std;
 
+int globIt = 0; // Used in TObject names to prevent duplicate names
+
 // This function appends a string object to a file of a given path
 void AppendToFile( string fileName, string data ){
 
     ofstream fout;
     fout.open( fileName, ios_base::app ); // Set the file to append
     fout << data;
+
+}
+
+// This function takes a mean and a sigma and returns the value by the given sigma
+double GaussianSmear( double val, double val_err ){
+
+    TRandom3 rand;
+    rand.SetSeed(0);
+
+    return rand.Gaus( val, val_err );
+    //double variance = rand.Gaus( val, val_err );
+    //return variance;
 
 }
 
@@ -72,7 +86,7 @@ vector<double> WeightedAverage( vector<double>& Vals, vector<double>& Errs ){
 
 // This function returns a TCanvas object holding the normalized and unnormalized PbPt vs. run number 
 // for a specified range of epochs
-TCanvas* Plot_PbPt_Epoch( RunPeriod& Period, int FirstEpoch, int LastEpoch, string Period_Title ){
+TCanvas* Plot_PbPt_Epoch( RunPeriod& Period, int FirstEpoch, int LastEpoch, string Period_Title, vector<double> PNF_Pos={1.0,0}, vector<double> PNF_Neg={1.0,0} ){
 
     // Set the Xaxis run ranges based on the run period
     double runMin = 0; double runMax = 0;
@@ -140,6 +154,16 @@ TCanvas* Plot_PbPt_Epoch( RunPeriod& Period, int FirstEpoch, int LastEpoch, stri
 
 	    // Positive runs
 	    if( nmrPbPt > 0 ){
+
+		// Apply the correction for the PNF if applicable
+		double PNF     = PNF_Pos[0];
+	 	double PNF_Err = PNF_Pos[1];
+		unnormPbPt = unnormPbPt * PNF;
+	        unnormPbPtErr = sqrt( pow((PNF*unnormPbPtErr),2) + pow((unnormPbPt*PNF_Err),2) );
+
+		normPbPt = normPbPt * PNF;
+	        normPbPtErr = sqrt( pow((PNF*normPbPtErr),2) + pow((normPbPt*PNF_Err),2) );
+
 	        // Add to the vectors for plotting later
 	        Pos_Runs.push_back( Run );
 	        Pos_PbPt.push_back( normPbPt ); Pos_PbPtErr.push_back( normPbPtErr );
@@ -154,6 +178,16 @@ TCanvas* Plot_PbPt_Epoch( RunPeriod& Period, int FirstEpoch, int LastEpoch, stri
 
 	    }
 	    else if( nmrPbPt < 0 ){
+
+		// Apply the correction for the PNF
+		double PNF     = PNF_Neg[0];
+	 	double PNF_Err = PNF_Neg[1];
+		unnormPbPt = unnormPbPt * PNF;
+	        unnormPbPtErr = sqrt( pow((PNF*unnormPbPtErr),2) + pow((unnormPbPt*PNF_Err),2) );
+
+		normPbPt = normPbPt * PNF;
+	        normPbPtErr = sqrt( pow((PNF*normPbPtErr),2) + pow((normPbPt*PNF_Err),2) );
+
 	        // Add to the vectors for plotting later
 	        Neg_Runs.push_back( Run );
 	        Neg_PbPt.push_back( normPbPt ); Neg_PbPtErr.push_back( normPbPtErr );
@@ -171,7 +205,8 @@ TCanvas* Plot_PbPt_Epoch( RunPeriod& Period, int FirstEpoch, int LastEpoch, stri
 	    // Write the PbPt data to a file
 	    string dataStream = to_string( Run ) +"   "+ to_string( unnormPbPt ) +"   "+ to_string( unnormPbPtErr ) +"   ";
 	    dataStream += to_string( normPbPt ) +"   "+ to_string( normPbPtErr ) + "\n";
-	    AppendToFile( "Output_Data/All_NH3_PbPt.txt", dataStream );
+	    if( PNF_Pos[1] != 0 || PNF_Neg[1] != 0 ) AppendToFile( "Output_Data/All_NH3_PbPt_PNF.txt", dataStream );
+	    else AppendToFile( "Output_Data/All_NH3_PbPt.txt", dataStream );
 
 	}
 	
@@ -186,49 +221,7 @@ TCanvas* Plot_PbPt_Epoch( RunPeriod& Period, int FirstEpoch, int LastEpoch, stri
 	return blank;
     }
 
-    // Make plots if everything is OK
-/*
-    TLegend* legUnnorm    = new TLegend(0.18,0.8,0.48,0.9);
-    TLegend* legNorm      = new TLegend(0.18,0.8,0.48,0.9);
-    TMultiGraph* mgUnnorm = new TMultiGraph();
-    TMultiGraph* mgNorm   = new TMultiGraph();
-
-    // Plot the offline NMR values
-    TGraphErrors* grNMR = new TGraphErrors( Runs.size(), Runs.data(), NMR_PbPt.data(), nullptr, NMR_PbPtErr.data() );
-    grNMR->SetMarkerStyle( kFullSquare );
-    grNMR->SetMarkerColor( kBlack );
-    mgNorm->Add( grNMR, "p" );
-    mgUnnorm->Add( grNMR, "p" );
-    legNorm->AddEntry( grNMR, "Offline NMR P_{B}P_{T}", "p" );
-    legUnnorm->AddEntry( grNMR, "Offline NMR P_{B}P_{T}", "p" );
-
-    // Plot Normalized PbPt
-    TGraphErrors* grNormPbPt = new TGraphErrors( Runs.size(), Runs.data(), PbPt.data(), nullptr, PbPtErr.data() );
-    grNormPbPt->SetMarkerStyle( kFullCircle );
-    grNormPbPt->SetMarkerColor( kBlue );
-    mgNorm->Add( grNormPbPt, "p" );
-    legNorm->AddEntry( grNormPbPt, "FC-Norm. P_{B}P_{T}", "p" );
-
-    mgNorm->SetTitle( string( Period_Title+" P_{B}P_{T} (Norm. to FC Charge); Run Number; P_{B}P_{T}").c_str() );
-
-    // Plot Unnormalized PbPt
-    TGraphErrors* grUnnormPbPt = new TGraphErrors( Runs.size(), Runs.data(), UnnormPbPt.data(), nullptr, UnnormPbPtErr.data() );
-    grUnnormPbPt->SetMarkerStyle( kFullCircle );
-    grUnnormPbPt->SetMarkerColor( kViolet );
-    mgUnnorm->Add( grUnnormPbPt, "p" );
-    legUnnorm->AddEntry( grUnnormPbPt, "Unnorm. P_{B}P_{T}", "p" );
-
-    mgUnnorm->SetTitle( string( Period_Title+" P_{B}P_{T} (Unnorm. to FC Charge); Run Number; P_{B}P_{T}").c_str() );
-
-    // Plot the %-difference between normalized PbPt and unnormalized PbPt versus FC asymmetry
-    TGraphErrors* deltaFC = new TGraphErrors( A_FC.size(), A_FC.data(), Delta_PbPt.data(), nullptr, nullptr );
-    deltaFC->SetMarkerStyle( kFullCircle );
-    deltaFC->SetMarkerColor( kRed );
-    deltaFC->SetTitle( string( Period_Title+" Percent Diff. in P_{B}P_{T} versus A_{FC}; A_{FC}; Percent Difference").c_str() );
-
-*/
- 
-    string canName = Period_Title+"_c";
+    string canName = Period_Title+"_c"+to_string( globIt );
     TCanvas* c = new TCanvas(canName.c_str(),canName.c_str(),2200,1200);
     c->Divide(3,2);
 
@@ -373,10 +366,10 @@ TCanvas* Plot_PbPt_Epoch( RunPeriod& Period, int FirstEpoch, int LastEpoch, stri
 
     // Create the lines of averages
     vector<double> Neg_AvgUnnorm = WeightedAverage( Neg_UnnormPbPt, Neg_UnnormPbPtErr );
-    TF1* Neg_UnnormLine = new TF1("Neg_UnnormLine",to_string( Neg_AvgUnnorm[0] ).c_str(), Runs.front(), Runs.back() );
+    TF1* Neg_UnnormLine = new TF1( string("Neg_UnnormLine"+to_string(globIt)).c_str(),to_string( Neg_AvgUnnorm[0] ).c_str(), Runs.front(), Runs.back() );
     Neg_UnnormLine->SetLineColor( kViolet );
     vector<double> Neg_AvgNorm = WeightedAverage( Neg_PbPt, Neg_PbPtErr );
-    TF1* Neg_NormLine = new TF1("Neg_NormLine",to_string( Neg_AvgNorm[0] ).c_str(), Runs.front(), Runs.back() );
+    TF1* Neg_NormLine = new TF1( string("Neg_NormLine"+to_string(globIt)).c_str(),to_string( Neg_AvgNorm[0] ).c_str(), Runs.front(), Runs.back() );
     Neg_NormLine->SetLineColor( kBlue );
 
     stringstream Neg_AvgUnVal; Neg_AvgUnVal <<"Average Unnorm. P_{B}P_{T} = "<< setprecision(3) << Neg_AvgUnnorm[0] <<" #pm "<< Neg_AvgUnnorm[1];
@@ -434,6 +427,138 @@ TCanvas* Plot_PbPt_Epoch( RunPeriod& Period, int FirstEpoch, int LastEpoch, stri
     Neg_deltaFC->GetXaxis()->SetLimits(-0.017,0.017);
     Neg_deltaFC->GetYaxis()->SetRangeUser(-0.5,0.5);
     Neg_deltaFC->Draw("ap"); Neg_legDelta->Draw("same");
+
+    // Reset the gPad margins
+    gPad->SetLeftMargin(0); gPad->SetRightMargin(0);
+
+    globIt++;
+
+    return c;
+
+}
+
+// This function is used in the next script. It checks whether or not a given run is within the
+// specified run period.
+bool IsInPeriod(int Run, string Period){
+
+    if( Period == "Summer" )                return Run < 16800;
+    else if( Period == "Fall (Neg. Sol.)" ) return Run > 16800 && Run < 17185;
+    else if( Period == "Fall (Pos. Sol.)" ) return Run > 17185 && Run < 17450;
+    else if( Period == "Spring" )           return Run > 17450 && Run <=17768;
+    return false;
+
+}
+
+// This function plots the PbPt for a given epoch both with and without the PNF correction factor
+// applied. Plots include both counts normalized to FC charge and unnormalized to FC charge. The PNF
+// were calculated without normalization to FC charge.
+TCanvas* Plot_PNF_PbPt( RunPeriod& RP, string Period, string Target ){
+
+    cout << "Get the files\n";
+    // Check that the files exist
+    ifstream fin( string("Output_Data/All_"+Target+"_PbPt.txt") );
+    ifstream finPNF( string("Output_Data/All_"+Target+"_PbPt_PNF.txt") );
+
+    if( fin.fail() || finPNF.fail() ){
+	cout <<"ERROR: At least one input file is missing. Returning empty canvas for "<< Period << endl;
+	TCanvas* err = new TCanvas();
+	return err;
+    }
+
+    // Read in the files and put them in vectors
+    string line;
+    vector<double> Runs, P_Unnorm, P_Unnorm_Err, P_Norm, P_Norm_Err;
+    vector<double> RunsPNF, P_UnnormPNF, P_Unnorm_ErrPNF, P_NormPNF, P_Norm_ErrPNF;
+
+    cout << "Read in from the files\n";
+    // Read in the PbPt without PNF applied
+    while( getline( fin, line ) ){ // No header row to remove for now...
+	stringstream sin(line);
+	double run, p_unnorm, p_unnormerr, p_norm, p_normerr;
+	sin >> run >> p_unnorm >> p_unnormerr >> p_norm >> p_normerr;
+	// Only add the runs if it's in the appropriate run period
+	if( IsInPeriod( run, Period ) ){
+	    Runs.push_back( run ); P_Unnorm.push_back( p_unnorm ); P_Unnorm_Err.push_back( p_unnormerr );
+	    P_Norm.push_back( p_norm ); P_Norm_Err.push_back( p_normerr );
+	}
+    }
+    fin.close();
+
+    // Read in the PbPt with PNF applied
+    while( getline( finPNF, line ) ){ // No header row to remove for now...
+	stringstream sin(line);
+	double run, p_unnorm, p_unnormerr, p_norm, p_normerr;
+	sin >> run >> p_unnorm >> p_unnormerr >> p_norm >> p_normerr;
+	// Only add the runs if it's in the appropriate run period
+	if( IsInPeriod( run, Period ) ){
+	    RunsPNF.push_back( run ); P_UnnormPNF.push_back( p_unnorm ); P_Unnorm_ErrPNF.push_back( p_unnormerr );
+	    P_NormPNF.push_back( p_norm ); P_Norm_ErrPNF.push_back( p_normerr );
+	}
+    }
+    finPNF.close();
+
+    // Don't plot anything if there's a discrepancy in the number of runs between each variation
+    if( (Runs.size() != RunsPNF.size()) || Runs.size() == 0 ){
+	cout <<"ERROR: Difference in runs between PNF normalized and unnormalized runs. Returning empty canvas for "<< Period << endl;
+	TCanvas* err = new TCanvas();
+	return err;
+    }
+
+    // Now move on to create the plots
+    cout <<"Start the plots\n";
+    TMultiGraph* mg_Unnorm = new TMultiGraph();
+    mg_Unnorm->SetTitle( string( Period+" Unnormalized P_{B}P_{T}; Run Number; PbPt" ).c_str() );
+    TLegend* leg_Unnorm = new TLegend(0.1, 0.4, 0.7, 0.6);
+    leg_Unnorm->SetTextFont(43);
+    leg_Unnorm->SetTextSize(15);
+    leg_Unnorm->SetBorderSize(0);
+    leg_Unnorm->SetFillStyle(0);
+
+    TGraphErrors* grUnnorm = new TGraphErrors( Runs.size(), Runs.data(), P_Unnorm.data(), nullptr, P_Unnorm_Err.data() );
+    grUnnorm->SetMarkerStyle( kFullCircle );
+    grUnnorm->SetMarkerColor( kRed );
+    mg_Unnorm->Add( grUnnorm, "p" );
+    leg_Unnorm->AddEntry( grUnnorm, "Unnorm. P_{B}P_{T}", "p" );
+
+    TGraphErrors* grUnnormPNF = new TGraphErrors( RunsPNF.size(), RunsPNF.data(), P_UnnormPNF.data(), nullptr, P_Unnorm_ErrPNF.data() );
+    grUnnormPNF->SetMarkerStyle( kFullCircle );
+    grUnnormPNF->SetMarkerColor( kBlue );
+    mg_Unnorm->Add( grUnnormPNF, "p" );
+    leg_Unnorm->AddEntry( grUnnormPNF, "PNF Unnorm. P_{B}P_{T}", "p" );
+
+    TMultiGraph* mg_Norm = new TMultiGraph();
+    mg_Norm->SetTitle( string( Period+" P_{B}P_{T} Normalized to FC Charge; Run Number; PbPt" ).c_str() );
+    TLegend* leg_Norm = new TLegend(0.1, 0.4, 0.7, 0.6);
+    leg_Norm->SetTextFont(43);
+    leg_Norm->SetTextSize(15);
+    leg_Norm->SetBorderSize(0);
+    leg_Norm->SetFillStyle(0);
+
+    TGraphErrors* grNorm = new TGraphErrors( Runs.size(), Runs.data(), P_Norm.data(), nullptr, P_Norm_Err.data() );
+    grNorm->SetMarkerStyle( kFullCircle );
+    grNorm->SetMarkerColor( kRed );
+    mg_Norm->Add( grNorm, "p" );
+    leg_Norm->AddEntry( grNorm, "Norm. P_{B}P_{T}", "p" );
+
+    TGraphErrors* grNormPNF = new TGraphErrors( RunsPNF.size(), RunsPNF.data(), P_NormPNF.data(), nullptr, P_Norm_ErrPNF.data() );
+    grNormPNF->SetMarkerStyle( kFullCircle );
+    grNormPNF->SetMarkerColor( kBlue );
+    mg_Norm->Add( grNormPNF, "p" );
+    leg_Norm->AddEntry( grNormPNF, "PNF Norm. P_{B}P_{T}", "p" );
+
+    mg_Unnorm->GetYaxis()->SetRangeUser(-1,1);
+    mg_Norm->GetYaxis()->SetRangeUser(-1,1);
+
+    TCanvas* c = new TCanvas("c","c",1600,600); c->Divide(2,1);
+    c->cd(1);
+
+    mg_Unnorm->Draw("ap");
+    leg_Unnorm->Draw("same");
+    
+    c->cd(2);
+
+    mg_Norm->Draw("ap");
+    leg_Norm->Draw("same");
 
     return c;
 
@@ -582,14 +707,22 @@ struct PbPt{
     }
 
     // First entry is the numerator term for PNF, the second is the denominator term. Returns zeros if denominator is invalid
-    vector<double> GetTermsPNF( string useNorm="Raw" ) const{
+    vector<double> GetTermsPNF( string useNorm="Raw", bool useGaussSmear=false ) const{
 	double PNF_num = 0; double PNF_den = 0;
 	for(auto EI : Elastic_Bins){
 	    if( EI.Q2_Mean != 0 ){
 		double PbPt = PbPt_Raw;
 		if( useNorm != "Raw" ) PbPt = PbPt_Norm;
-		PNF_num += EI.DF_el * (EI.N_P - EI.N_M) * EI.A_el * PbPt;
-		PNF_den += pow( EI.DF_el, 2 ) * (EI.N_P + EI.N_M) * pow( (EI.A_el * PbPt ), 2 );
+		// Apply a sign correction if it's in the positive solenoid period
+		double corr_factor = 1.0;
+		double thisDF_el = EI.DF_el;
+
+		// Vary the dilution factor by a gaussian smear if a systematic study is being done
+		if( useGaussSmear ) thisDF_el = GaussianSmear( EI.DF_el, EI.DF_el_err );
+
+		if( RunNumber > 17185 && RunNumber < 17450 ) corr_factor = -1.0;
+		PNF_num += thisDF_el * (EI.N_P - EI.N_M) * EI.A_el * PbPt * corr_factor;
+		PNF_den += pow( thisDF_el, 2 ) * (EI.N_P + EI.N_M) * pow( (EI.A_el * PbPt ), 2 );
 	    }
 	}
 	vector<double> PNF_terms = { PNF_num, PNF_den };
@@ -597,6 +730,7 @@ struct PbPt{
     }
 
 };
+
 // Returns a vector of all PbPt info
 vector<PbPt> All_PbPt_Info(){
     
@@ -619,7 +753,7 @@ vector<PbPt> All_PbPt_Info(){
 
 // This function calculates the PNF for a given run period and target polarization. Returns a vector with the PNF info.
 // The first entry is the actual PNF value, the second is the statistical error on it
-vector<double> Calculate_PNF( vector<PbPt>& AllPbPt, RunPeriod& RP, string Period, string Target, int targetPol ){
+vector<double> Calculate_PNF( vector<PbPt>& AllPbPt, RunPeriod& RP, string Period, string Target, int targetPol, bool useGaussSmear=false ){
 
     vector<double> PNF = {0,0};
 
@@ -636,35 +770,194 @@ vector<double> Calculate_PNF( vector<PbPt>& AllPbPt, RunPeriod& RP, string Perio
 	// Find the appropriate value of PbPt
 	for( PbPt p : AllPbPt ){
 	    if( p.RunNumber == r ){
-		auto PNF_terms = p.GetTermsPNF(); // Defalts to using raw counts
+		auto PNF_terms = p.GetTermsPNF("Raw",useGaussSmear); // Defalts to using raw counts
 		PNF_num += PNF_terms[0];
 		PNF_den += PNF_terms[1];
 	    }
 	}
     }
 
-    if( PNF_den > 0 ){
+    if( PNF_den != 0 ){
 	PNF[0] = PNF_num / PNF_den;
 	PNF[1] = 1.0 / sqrt( PNF_den );
-	cout <<"PNF for "<< Period <<", "<< Target <<", Pt ~ "<< targetPol <<": PNF = "<< PNF[0] <<" +- "<< PNF[1] << endl;
+	if( !useGaussSmear ) cout <<"PNF for "<< Period <<", "<< Target <<", Pt ~ "<< targetPol <<": PNF = "<< PNF[0] <<" +- "<< PNF[1] << endl;
     }
+
     else cout <<"ERROR: Invalid calculation of PNF for "<< Period <<". Check inputs.\n";
 
     return PNF;
 
 }
 
+// This function calculates the variance in the PNF for the elastic DFs for all run periods and target polarization states.
+// The vector returns the TCanvas with all the histograms and writes the final values to the "Variations" vector.
+TCanvas* PNF_ElasticDF_Stat_Err( vector<PbPt>& AllPbPt, RunPeriod& RP, string Period, string Target, int numVariations, vector<double>& Variations ){
+
+    // Create histograms for each run period. There are three histograms for each run period, one for pos Tpol, neg Tpol, and the weighted average
+    TH1D* Pos_PNF = new TH1D( string(Period+"_"+Target+"_Pos").c_str(), "", 2000, 0.8, 1.2);
+    Pos_PNF->SetStats(false);
+    Pos_PNF->SetLineColor( kRed );
+    Pos_PNF->SetTitle( string( Period+" PNF Distributions for Variance in d_{el}; PNF;" ).c_str() );
+    TH1D* Neg_PNF = new TH1D( string(Period+"_"+Target+"_Neg").c_str(), "", 2000, 0.8, 1.2);
+    Neg_PNF->SetStats(false);
+    Neg_PNF->SetLineColor( kBlue );
+    Neg_PNF->SetTitle( string( Period+" PNF Distributions for Variance in d_{el}; PNF;" ).c_str() );
+    TH1D* Avg_PNF = new TH1D( string(Period+"_"+Target+"_Avg").c_str(), "", 2000, 0.8, 1.2);
+    Avg_PNF->SetStats(false);
+    Avg_PNF->SetLineColor( kViolet );
+    Avg_PNF->SetTitle( string( Period+" PNF Distributions for Variance in d_{el}; PNF;" ).c_str() );
+
+    // Start the data loop
+    for(int i=0; i<numVariations; i++){
+
+	if( i%1000 == 0 ) cout <<"Processed "<< i <<" variations for "<< Period <<", "<< Target <<"...\n";
+	
+	// Positive target data
+	vector<double> thisVarPos = Calculate_PNF( AllPbPt, RP, Period, Target, 1, true );
+	Pos_PNF->Fill( thisVarPos[0] );
+
+	// Negitive target data
+	vector<double> thisVarNeg = Calculate_PNF( AllPbPt, RP, Period, Target,-1, true );
+	Neg_PNF->Fill( thisVarNeg[0] );
+
+	// Average target data
+	vector<double> allPNFs    = { thisVarPos[0], thisVarNeg[0] };
+	vector<double> allPNFErrs = { thisVarPos[1], thisVarNeg[1] };
+	vector<double> thisVarAvg = WeightedAverage( allPNFs, allPNFErrs );
+	Avg_PNF->Fill( thisVarAvg[0] );
+
+    }
+
+    // Plot everything and set the values
+    TLegend* leg = new TLegend(0.65,0.7,0.9,0.9);
+    
+    // Make the strings for the legend
+    stringstream legAvgPNF; legAvgPNF <<"Avg. PNF = "<< setprecision(3) << Avg_PNF->GetMean() <<" #pm "<< Avg_PNF->GetStdDev();
+    leg->AddEntry( Avg_PNF, legAvgPNF.str().c_str(), "lp" );
+
+    stringstream legPosPNF; legPosPNF <<"P_{t} > 0 PNF = "<< setprecision(3) << Pos_PNF->GetMean() <<" #pm "<< Pos_PNF->GetStdDev();
+    leg->AddEntry( Pos_PNF, legPosPNF.str().c_str(), "lp" );
+
+    stringstream legNegPNF; legNegPNF <<"P_{t} < 0 PNF = "<< setprecision(3) << Neg_PNF->GetMean() <<" #pm "<< Neg_PNF->GetStdDev();
+    leg->AddEntry( Neg_PNF, legNegPNF.str().c_str(), "lp" );
+
+    // Set the errors
+    Variations = { Pos_PNF->GetStdDev(), Neg_PNF->GetStdDev(), Avg_PNF->GetStdDev() };
+
+    // Adjust the ranges based on the positions of the peaks
+    double xLow  = Avg_PNF->GetMean() - 100*Avg_PNF->GetStdDev();
+    double xHigh = Avg_PNF->GetMean() + 100*Avg_PNF->GetStdDev();
+    // Find the largest bin size to adjust the y-axis
+    int yMax = 0;
+    for(int i=1; i<=2000; i++) if( Avg_PNF->GetBinContent(i) > yMax ) yMax = Avg_PNF->GetBinContent(i);
+
+    Pos_PNF->GetXaxis()->SetRangeUser( xLow, xHigh ); Pos_PNF->GetYaxis()->SetRangeUser( 0, yMax*1.1 );
+    Neg_PNF->GetXaxis()->SetRangeUser( xLow, xHigh ); Neg_PNF->GetYaxis()->SetRangeUser( 0, yMax*1.1 );
+    Avg_PNF->GetXaxis()->SetRangeUser( xLow, xHigh ); Avg_PNF->GetYaxis()->SetRangeUser( 0, yMax*1.1 );
+
+    gStyle->SetTitleX(0.5);
+    gStyle->SetTitleAlign(23);
+
+    string canName = "PNF"+Period+Target;
+    TCanvas* c = new TCanvas( canName.c_str(), canName.c_str(), 800, 600 );
+    c->cd();
+    Pos_PNF->Draw("colz"); Neg_PNF->Draw("same"); Avg_PNF->Draw("same"); leg->Draw("same");
+    
+    return c;
+
+}
+
+// This function takes vectors of all the positive and negative PNFs for each run period and makes a plot out of them,
+// as well as calculating the weighted average for each run period
+TCanvas* Plot_All_PNFs( vector<double>& All_Pos_PNF, vector<double>& All_Pos_PNF_Err, vector<double>& All_Neg_PNF, vector<double>& All_Neg_PNF_Err ){
+
+    // Kill the program if the sizes aren't correct
+    if( All_Pos_PNF.size() != 4 or All_Pos_PNF_Err.size() != 4 or All_Neg_PNF.size() != 4 or All_Neg_PNF_Err.size() != 4 ){
+	cout <<"ERROR: Not enough PNFs were passed in. Returning empty canvas...\n";
+	TCanvas* err = new TCanvas(); return err;
+    }
+
+    // Make the vectors for each run period
+    vector<double> Pos_Periods = {1, 2, 3, 4};
+    vector<double> Neg_Periods = {1.1, 2.1, 3.1, 4.1};
+    vector<double> Avg_Periods = {1.2, 2.2, 3.2, 4.2};
+
+    // Calculate the weighted averages for each of the run periods
+    vector<double> Su22_Vals    = {All_Pos_PNF[0], All_Neg_PNF[0]}; vector<double> Su22_Errs    = {All_Pos_PNF_Err[0], All_Neg_PNF_Err[0]};
+    vector<double> Fa22Neg_Vals = {All_Pos_PNF[1], All_Neg_PNF[1]}; vector<double> Fa22Neg_Errs = {All_Pos_PNF_Err[1], All_Neg_PNF_Err[1]};
+    vector<double> Fa22Pos_Vals = {All_Pos_PNF[2], All_Neg_PNF[2]}; vector<double> Fa22Pos_Errs = {All_Pos_PNF_Err[2], All_Neg_PNF_Err[2]};
+    vector<double> Sp23Inb_Vals = {All_Pos_PNF[3], All_Neg_PNF[3]}; vector<double> Sp23Inb_Errs = {All_Pos_PNF_Err[3], All_Neg_PNF_Err[3]};
+
+    vector<double> Su22_Avg_PNF    = WeightedAverage( Su22_Vals, Su22_Errs );
+    vector<double> Fa22Neg_Avg_PNF = WeightedAverage( Fa22Neg_Vals, Fa22Neg_Errs );
+    vector<double> Fa22Pos_Avg_PNF = WeightedAverage( Fa22Pos_Vals, Fa22Pos_Errs );
+    vector<double> Sp23Inb_Avg_PNF = WeightedAverage( Sp23Inb_Vals, Sp23Inb_Errs );
+
+//    vector<double> Fa22Neg_Avg_PNF = WeightedAverage( {All_Pos_PNF[1], All_Neg_PNF[1]}, {All_Pos_PNF_Err[1], All_Neg_PNF_Err[1]} );
+//    vector<double> Fa22Pos_Avg_PNF = WeightedAverage( {All_Pos_PNF[2], All_Neg_PNF[2]}, {All_Pos_PNF_Err[2], All_Neg_PNF_Err[2]} );
+//    vector<double> Sp23Inb_Avg_PNF = WeightedAverage( {All_Pos_PNF[3], All_Neg_PNF[3]}, {All_Pos_PNF_Err[3], All_Neg_PNF_Err[3]} );
+
+    // Put the averages in a vector so they can be plotted
+    vector<double> All_Avg_PNF     = { Su22_Avg_PNF[0], Fa22Neg_Avg_PNF[0], Fa22Pos_Avg_PNF[0], Sp23Inb_Avg_PNF[0] };    
+    vector<double> All_Avg_PNF_Err = { Su22_Avg_PNF[1], Fa22Neg_Avg_PNF[1], Fa22Pos_Avg_PNF[1], Sp23Inb_Avg_PNF[1] };    
+
+    // Make a graph and legend to hold the information
+    TMultiGraph* mg = new TMultiGraph();
+    TLegend* leg = new TLegend(0.65, 0.7, 0.9, 0.9);
+
+    TGraphErrors* grPos = new TGraphErrors( All_Pos_PNF.size(), Pos_Periods.data(), All_Pos_PNF.data(), nullptr, All_Pos_PNF_Err.data() );
+    grPos->SetMarkerStyle( kFullCircle );
+    grPos->SetMarkerColor( kRed );
+    mg->Add( grPos, "p" );
+    leg->AddEntry( grPos, "PNF for P_{t} > 0", "p" );
+
+    TGraphErrors* grNeg = new TGraphErrors( All_Neg_PNF.size(), Neg_Periods.data(), All_Neg_PNF.data(), nullptr, All_Neg_PNF_Err.data() );
+    grNeg->SetMarkerStyle( kFullCircle );
+    grNeg->SetMarkerColor( kBlue );
+    mg->Add( grNeg, "p" );
+    leg->AddEntry( grNeg, "PNF for P_{t} < 0", "p" );
+
+    TGraphErrors* grAvg = new TGraphErrors( All_Avg_PNF.size(), Avg_Periods.data(), All_Avg_PNF.data(), nullptr, All_Avg_PNF_Err.data() );
+    grAvg->SetMarkerStyle( kFullCircle );
+    grAvg->SetMarkerColor( kViolet );
+    mg->Add( grAvg, "p" );
+    leg->AddEntry( grAvg, "Avg. PNF All P_{t}", "p" );
+
+    mg->SetTitle("All PNF vs. Run Period; Run Period; PNF");
+
+    TCanvas* Plt = new TCanvas("PNF","PNF",800,600);
+    Plt->cd();
+    mg->Draw("ap");
+    leg->Draw("same");
+
+    return Plt;
+}
+
 void Calculate_PbPt(){
 
+
     // If there's already a file holding the PbPt info, make sure it's deleted
-    if( remove("Output_Data/All_NH3_PbPt.txt") == 0 ) cout <<"Removed NH3 PbPt file...\n";
+    if( remove("Output_Data/All_NH3_PbPt.txt")     == 0 ) cout <<"Removed NH3 PbPt file...\n";
+    if( remove("Output_Data/All_NH3_PbPt_PNF.txt") == 0 ) cout <<"Removed NH3 PNF-corrected PbPt file...\n";
 
     RunPeriod Period; // Holds the run info
 
-    auto Plot_Su22    = Plot_PbPt_Epoch( Period, 1, 10, "Summer" );            //Plot_Su22->Print("PDF_Plots/PbPt_Vs_Runs.pdf(");
-    auto Plot_Fa22Neg = Plot_PbPt_Epoch( Period, 11, 15, "Fall (Neg. Sol.)" ); //Plot_Fa22Neg->Print("PDF_Plots/PbPt_Vs_Runs.pdf");
-    //auto Plot_Fa22Pos = Plot_PbPt_Epoch( Period, 16, 19, "Fall (Pos. Sol.)" ); Plot_Fa22Pos->Print("PDF_Plots/PbPt_Vs_Runs.pdf");
-    auto Plot_Sp23Inb = Plot_PbPt_Epoch( Period, 20, 23, "Spring" );           //Plot_Sp23Inb->Print("PDF_Plots/PbPt_Vs_Runs.pdf)");
+    // Plots the DIS PbPt for each of the epochs
+    auto Plot_Su22    = Plot_PbPt_Epoch( Period, 1, 10, "Summer" );            Plot_Su22->Print("PDF_Plots/PbPt_Vs_Runs.pdf(");
+    auto Plot_Fa22Neg = Plot_PbPt_Epoch( Period, 11, 15, "Fall (Neg. Sol.)" ); Plot_Fa22Neg->Print("PDF_Plots/PbPt_Vs_Runs.pdf");
+    auto Plot_Fa22Pos = Plot_PbPt_Epoch( Period, 16, 19, "Fall (Pos. Sol.)" ); Plot_Fa22Pos->Print("PDF_Plots/PbPt_Vs_Runs.pdf");
+    auto Plot_Sp23Inb = Plot_PbPt_Epoch( Period, 20, 23, "Spring" );           Plot_Sp23Inb->Print("PDF_Plots/PbPt_Vs_Runs.pdf)");
+
+    // Delete canvases to free memory
+    Plot_Su22->Close();    delete Plot_Su22;
+    Plot_Fa22Neg->Close(); delete Plot_Fa22Neg;
+    Plot_Fa22Pos->Close(); delete Plot_Fa22Pos;
+    Plot_Sp23Inb->Close(); delete Plot_Sp23Inb;
+
+    // Used for visualizing the elastic DF error propagation
+    TCanvas* Elastic_DF_Errors = new TCanvas("ElDF","ElDF",1600,1200); Elastic_DF_Errors->Divide(2,2);
+    vector<double> Variations; // This vector holds the elastic DF errors
+			       // The first entry 
 
     // Now calculate the normalization factors
 
@@ -672,108 +965,138 @@ void Calculate_PbPt(){
     auto DIS_PbPt = All_PbPt_Info();
     //for( auto r : DIS_PbPt ) r.Print();
 
-    auto PNFs = Calculate_PNF( DIS_PbPt, Period, "Su22", "NH3", 1 );
-    PNFs = Calculate_PNF( DIS_PbPt, Period, "Su22", "NH3",-1 );
+    // Su22 data
+    auto Su22_Pos_PNFs = Calculate_PNF( DIS_PbPt, Period, "Su22", "NH3", 1 );
+    auto Su22_Neg_PNFs = Calculate_PNF( DIS_PbPt, Period, "Su22", "NH3",-1 );
+        // Plot the elastic DF errors
+        auto PNF_Su22_Plot = PNF_ElasticDF_Stat_Err( DIS_PbPt, Period, "Su22", "NH3", 1000, Variations );
+        Elastic_DF_Errors->cd(1);
+        PNF_Su22_Plot->DrawClonePad();
+    // Add the elastic DF errors in quadrature with the other statistical errors on PNF
+    Su22_Pos_PNFs[1] = sqrt( pow( Su22_Pos_PNFs[1], 2) + pow( Variations[0], 2 ) );
+    Su22_Neg_PNFs[1] = sqrt( pow( Su22_Neg_PNFs[1], 2) + pow( Variations[1], 2 ) );
 
-    PNFs = Calculate_PNF( DIS_PbPt, Period, "Fa22Neg", "NH3", 1 );
-    PNFs = Calculate_PNF( DIS_PbPt, Period, "Fa22Neg", "NH3",-1 );
-
-    PNFs = Calculate_PNF( DIS_PbPt, Period, "Sp23Inb", "NH3", 1 );
-    PNFs = Calculate_PNF( DIS_PbPt, Period, "Sp23Inb", "NH3",-1 );
+    auto Plot_Su22_PNF = Plot_PbPt_Epoch( Period, 1, 10, "Summer", Su22_Pos_PNFs, Su22_Neg_PNFs );
+    Plot_Su22_PNF->Print("PDF_Plots/PNF_PbPt_Vs_Runs.pdf(");
 
 
+    // Fa22Neg data
+    auto Fa22Neg_Pos_PNFs = Calculate_PNF( DIS_PbPt, Period, "Fa22Neg", "NH3", 1 );
+    auto Fa22Neg_Neg_PNFs = Calculate_PNF( DIS_PbPt, Period, "Fa22Neg", "NH3",-1 );
+        // Plot the elastic DF errors
+        auto PNF_Fa22Neg_Plot = PNF_ElasticDF_Stat_Err( DIS_PbPt, Period, "Fa22Neg", "NH3", 1000, Variations );
+        Elastic_DF_Errors->cd(2);
+        PNF_Fa22Neg_Plot->DrawClonePad();
+    // Add the elastic DF errors in quadrature with the other statistical errors on PNF
+    Fa22Neg_Pos_PNFs[1] = sqrt( pow( Fa22Neg_Pos_PNFs[1], 2) + pow( Variations[0], 2 ) );
+    Fa22Neg_Neg_PNFs[1] = sqrt( pow( Fa22Neg_Neg_PNFs[1], 2) + pow( Variations[1], 2 ) );
+
+    auto Plot_Fa22Neg_PNF = Plot_PbPt_Epoch( Period, 11, 15, "Fall (Neg. Sol.)", Fa22Neg_Pos_PNFs, Fa22Neg_Neg_PNFs );
+    Plot_Fa22Neg_PNF->Print("PDF_Plots/PNF_PbPt_Vs_Runs.pdf");
+
+
+    // Fa22Pos data
+    auto Fa22Pos_Pos_PNFs = Calculate_PNF( DIS_PbPt, Period, "Fa22Pos", "NH3", 1 );
+    auto Fa22Pos_Neg_PNFs = Calculate_PNF( DIS_PbPt, Period, "Fa22Pos", "NH3",-1 );
+        // Plot the elastic DF errors
+        auto PNF_Fa22Pos_Plot = PNF_ElasticDF_Stat_Err( DIS_PbPt, Period, "Fa22Pos", "NH3", 1000, Variations );
+        Elastic_DF_Errors->cd(3);
+        PNF_Fa22Pos_Plot->DrawClonePad();
+    // Add the elastic DF errors in quadrature with the other statistical errors on PNF
+    Fa22Pos_Pos_PNFs[1] = sqrt( pow( Fa22Pos_Pos_PNFs[1], 2) + pow( Variations[0], 2 ) );
+    Fa22Pos_Neg_PNFs[1] = sqrt( pow( Fa22Pos_Neg_PNFs[1], 2) + pow( Variations[1], 2 ) );
+
+    auto Plot_Fa22Pos_PNF = Plot_PbPt_Epoch( Period, 16, 19, "Fall (Pos. Sol.)", Fa22Pos_Pos_PNFs, Fa22Pos_Neg_PNFs );
+    Plot_Fa22Pos_PNF->Print("PDF_Plots/PNF_PbPt_Vs_Runs.pdf");
+
+
+    // Sp23Inb data
+    auto Sp23Inb_Pos_PNFs = Calculate_PNF( DIS_PbPt, Period, "Sp23Inb", "NH3", 1 );
+    auto Sp23Inb_Neg_PNFs = Calculate_PNF( DIS_PbPt, Period, "Sp23Inb", "NH3",-1 );
+        // Plot the elastic DF errors
+        auto PNF_Sp23Inb_Plot = PNF_ElasticDF_Stat_Err( DIS_PbPt, Period, "Sp23Inb", "NH3", 1000, Variations );
+        Elastic_DF_Errors->cd(4);
+        PNF_Sp23Inb_Plot->DrawClonePad();
+    // Add the elastic DF errors in quadrature with the other statistical errors on PNF
+    Sp23Inb_Pos_PNFs[1] = sqrt( pow( Sp23Inb_Pos_PNFs[1], 2) + pow( Variations[0], 2 ) );
+    Sp23Inb_Neg_PNFs[1] = sqrt( pow( Sp23Inb_Neg_PNFs[1], 2) + pow( Variations[1], 2 ) );
+
+    auto Plot_Sp23Inb_PNF = Plot_PbPt_Epoch( Period, 20, 23, "Spring", Sp23Inb_Pos_PNFs, Sp23Inb_Neg_PNFs );
+    Plot_Sp23Inb_PNF->Print("PDF_Plots/PNF_PbPt_Vs_Runs.pdf)");
+
+    // Plot and draw the comparisons with and without the PNF applied
+    auto Su22_PNF_Plt    = Plot_PNF_PbPt( Period, "Summer", "NH3" );           Su22_PNF_Plt->Print("PDF_Plots/PNF_Comparison.pdf(");
+    auto Fa22Neg_PNF_Plt = Plot_PNF_PbPt( Period, "Fall (Neg. Sol.)", "NH3" ); Fa22Neg_PNF_Plt->Print("PDF_Plots/PNF_Comparison.pdf");
+    auto Fa22Pos_PNF_Plt = Plot_PNF_PbPt( Period, "Fall (Pos. Sol.)", "NH3" ); Fa22Pos_PNF_Plt->Print("PDF_Plots/PNF_Comparison.pdf");
+    auto Sp23_PNF_Plt    = Plot_PNF_PbPt( Period, "Spring", "NH3" );           Sp23_PNF_Plt->Print("PDF_Plots/PNF_Comparison.pdf)");
+
+
+    // This plots the PNFs for each run period
+    vector<double> All_Pos_PNF     = { Su22_Pos_PNFs[0], Fa22Neg_Pos_PNFs[0], Fa22Pos_Pos_PNFs[0], Sp23Inb_Pos_PNFs[0] };
+    vector<double> All_Pos_PNF_Err = { Su22_Pos_PNFs[1], Fa22Neg_Pos_PNFs[1], Fa22Pos_Pos_PNFs[1], Sp23Inb_Pos_PNFs[1] };
+    vector<double> All_Neg_PNF     = { Su22_Neg_PNFs[0], Fa22Neg_Neg_PNFs[0], Fa22Pos_Neg_PNFs[0], Sp23Inb_Neg_PNFs[0] };
+    vector<double> All_Neg_PNF_Err = { Su22_Neg_PNFs[1], Fa22Neg_Neg_PNFs[1], Fa22Pos_Neg_PNFs[1], Sp23Inb_Neg_PNFs[1] };
+
+    auto All_PNF_Plt = Plot_All_PNFs( All_Pos_PNF, All_Pos_PNF_Err, All_Neg_PNF, All_Neg_PNF_Err );
+    All_PNF_Plt->Print("PDF_Plots/Weighted_Avg_PNF.pdf");
+
+   
+    /*------------------------------------------------- Print all the PNF values with the full errrors ----------------------------------------------------*/
+
+    cout <<"Summer PNFs:\n";
+    cout <<"---> Su22 Pos PNF = "<< Su22_Pos_PNFs[0] <<" +- "<< Su22_Pos_PNFs[1] << endl;
+    cout <<"---> Su22 Neg PNF = "<< Su22_Neg_PNFs[0] <<" +- "<< Su22_Neg_PNFs[1] << endl;
+    cout << endl;
+
+    cout <<"Fall (Neg. Sol.) PNFs:\n";
+    cout <<"---> Fa22Neg Pos PNF = "<< Fa22Neg_Pos_PNFs[0] <<" +- "<< Fa22Neg_Pos_PNFs[1] << endl;
+    cout <<"---> Fa22Neg Neg PNF = "<< Fa22Neg_Neg_PNFs[0] <<" +- "<< Fa22Neg_Neg_PNFs[1] << endl;
+    cout << endl;
+
+    cout <<"Fall (Pos. Sol.) PNFs:\n";
+    cout <<"---> Fa22Pos Pos PNF = "<< Fa22Pos_Pos_PNFs[0] <<" +- "<< Fa22Pos_Pos_PNFs[1] << endl;
+    cout <<"---> Fa22Pos Neg PNF = "<< Fa22Pos_Neg_PNFs[0] <<" +- "<< Fa22Pos_Neg_PNFs[1] << endl;
+    cout << endl;
+
+    cout <<"Spring (Inb.) PNFs:\n";
+    cout <<"---> Sp23Inb Pos PNF = "<< Sp23Inb_Pos_PNFs[0] <<" +- "<< Sp23Inb_Pos_PNFs[1] << endl;
+    cout <<"---> Sp23Inb Neg PNF = "<< Sp23Inb_Neg_PNFs[0] <<" +- "<< Sp23Inb_Neg_PNFs[1] << endl;
+    cout << endl;
+
+
+    // Calculate the error propagation for the elastic dilution factors
+//TCanvas* PNF_ElasticDF_Stat_Err( vector<PbPt>& AllPbPt, RunPeriod& RP, string Period, string Target, int numVariations, vector<double>& Variations ){
 /*
-    // Hold all the relevant PbPt info
-    // A_FC is the FC charge asymmetry for that run (with sign correction to TPol), and
-    // Delta_PbPt is the difference between the PbPt with and without FC-normalization
-    vector<double> PbPt, PbPtErr, UnnormPbPt, UnnormPbPtErr, Runs, A_FC, Delta_PbPt, Delta_PbPtErr;
-    
-    // Track any missed runs
-    vector<int> MissedRuns;
+    TCanvas* Elastic_DF_Errors = new TCanvas("ElDF","ElDF",1600,1200); Elastic_DF_Errors->Divide(2,2);
 
-    // Start the loop over all epochs in Summer 2022
-    for( int i=1; i<=2; i++ ){
-	string epoch;
-	if( i < 10 ) epoch = "P0"+to_string(i);
-	else         epoch = "P" +to_string(i);
+    vector<double> Variations;
 
-	vector<int> EpochRuns = Period.getRunEpoch( epoch );
-	for( int Run : EpochRuns ){
-	    DataSet thisRun;
-	    // Read in the DF data
-	    string DFdata = "Output_Data/All_DF_Data_Epoch_"+to_string(i)+".txt";
-	    thisRun.ReadDFfromTXT( DFdata );
-	    if( !thisRun.AddToBins( string("../Latest_Skims/Text_Files/NH3_"+to_string(Run)+"_DF_Data.txt"), "NH3" ) ) MissedRuns.push_back( Run );
-	    
-	    // Get the unnormalized PbPt
-	    thisRun.MaxLikelihoodPbPt( Run, Period, false );
-	    double unnormPbPt    = thisRun.getBT_Pol();
-	    double unnormPbPtErr = thisRun.getBT_Pol_Err();
-	    double afc  	 = thisRun.getAFC("NH3");
+    auto PNF_Su22_Plot = PNF_ElasticDF_Stat_Err( DIS_PbPt, Period, "Su22", "NH3", 1000, Variations );
+    Elastic_DF_Errors->cd(1);
+    PNF_Su22_Plot->DrawClonePad();
+    cout <<"Su22 errors:\n";
+    for(auto v : Variations ) cout << v <<" "<< endl;
 
-	    // Get the normalized PbPt
-	    thisRun.MaxLikelihoodPbPt( Run, Period, true );
-	    double normPbPt    = thisRun.getBT_Pol();
-	    double normPbPtErr = thisRun.getBT_Pol_Err();
+    auto PNF_Fa22Neg_Plot = PNF_ElasticDF_Stat_Err( DIS_PbPt, Period, "Fa22Neg", "NH3", 1000, Variations );
+    Elastic_DF_Errors->cd(2);
+    PNF_Fa22Neg_Plot->DrawClonePad();
+    cout <<"Fa22Neg errors:\n";
+    for(auto v : Variations ) cout << v <<" "<< endl;
 
-	    // Add to the vectors for plotting later
-	    Runs.push_back( Run );
-	    PbPt.push_back( normPbPt ); PbPtErr.push_back( normPbPtErr );
-	    UnnormPbPt.push_back( unnormPbPt ); UnnormPbPtErr.push_back( unnormPbPtErr );
-	    A_FC.push_back( afc );
-	    Delta_PbPt.push_back( (unnormPbPt - normPbPt)/unnormPbPt );
-	}
-	
-    }
+    auto PNF_Fa22Pos_Plot = PNF_ElasticDF_Stat_Err( DIS_PbPt, Period, "Fa22Pos", "NH3", 1000, Variations );
+    Elastic_DF_Errors->cd(3);
+    PNF_Fa22Pos_Plot->DrawClonePad();
+    cout <<"Fa22Pos errors:\n";
+    for(auto v : Variations ) cout << v <<" "<< endl;
 
-    // Kill the attempt if runs are missing
-    if( MissedRuns.size() > 0 ){
-	cout <<"ERROR: Missed runs were found! Aborting calculation...\n";
-	cout <<"Runs Missing:\n";
-	for(int r : MissedRuns) cout <<"---> "<< r << endl;
-	return;
-    }
+    auto PNF_Sp23Inb_Plot = PNF_ElasticDF_Stat_Err( DIS_PbPt, Period, "Sp23Inb", "NH3", 1000, Variations );
+    Elastic_DF_Errors->cd(4);
+    PNF_Sp23Inb_Plot->DrawClonePad();
+    cout <<"Sp23Inb errors:\n";
+    for(auto v : Variations ) cout << v <<" "<< endl;
 
-    // Make plots if everything is OK
-
-    // Plot Normalized PbPt
-    TGraphErrors* grNormPbPt = new TGraphErrors( Runs.size(), Runs.data(), PbPt.data(), nullptr, PbPtErr.data() );
-    grNormPbPt->SetMarkerStyle( kFullCircle );
-    grNormPbPt->SetMarkerColor( kBlue );
-    grNormPbPt->SetTitle("Summer P_{B}P_{T} (Norm. to FC Charge); Run Number; P_{B}P_{T}");
-
-    // Plot Unnormalized PbPt
-    TGraphErrors* grUnnormPbPt = new TGraphErrors( Runs.size(), Runs.data(), UnnormPbPt.data(), nullptr, UnnormPbPtErr.data() );
-    grUnnormPbPt->SetMarkerStyle( kFullCircle );
-    grUnnormPbPt->SetMarkerColor( kViolet );
-    grUnnormPbPt->SetTitle("Summer P_{B}P_{T} (Unnorm. to FC Charge); Run Number; P_{B}P_{T}");
-
-    // Plot the %-difference between normalized PbPt and unnormalized PbPt versus FC asymmetry
-    TGraphErrors* deltaFC = new TGraphErrors( A_FC.size(), A_FC.data(), Delta_PbPt.data(), nullptr, nullptr );
-    deltaFC->SetMarkerStyle( kFullCircle );
-    deltaFC->SetMarkerColor( kRed );
-    deltaFC->SetTitle("Summer Percent Diff. in P_{B}P_{T} versus A_{FC}; A_{FC}; Percent Difference");
-
-    TCanvas* c = new TCanvas("c","c",2200,600);
-    c->Divide(3,1);
-
-    c->cd(1); grNormPbPt->Draw("ap");
-    c->cd(2); grUnnormPbPt->Draw("ap");
-    c->cd(3); deltaFC->Draw("ap");
+    Elastic_DF_Errors->Print("PDF_Plots/PNF_Elastic_DF_Error_Propagation.pdf");
 */
-/*
-    DataSet Test;
-    Test.ReadDFfromTXT("Output_Data/All_DF_Data_Epoch_10.txt");
-    //Test.Print(true);
-    if( Test.AddToBins("../Latest_Skims/Text_Files/NH3_16772_DF_Data.txt", "NH3") ) cout << "Opened run 16772!\n";
-
-    // Calculate it twice to make sure nothing is overwritten upon each call
-    Test.MaxLikelihoodPbPt( 16772, Period, true );
-    Test.MaxLikelihoodPbPt( 16772, Period, true );
-
-    // Calculate it a couple times without FC charge normalization
-    Test.MaxLikelihoodPbPt( 16772, Period, false );
-    Test.MaxLikelihoodPbPt( 16772, Period, false );
-*/
+//TCanvas* Plot_PNF_PbPt( RunPeriod& RP, string Period, string Target ){
 
 }

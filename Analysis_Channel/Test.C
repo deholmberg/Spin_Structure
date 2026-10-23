@@ -427,7 +427,7 @@ void CalculateElasticDF( RunPeriod& RP, string Period, string Target, int target
 
     thisEpoch.SetEpochValues( Period, Target, Epoch, MissedRuns, useElasticData ); // Read in the runs
     thisEpoch.CalculateAvgXQ2( Period, Epoch, Target, true ); // Set the kinematic values for every bin
-    thisEpoch.CalculateDF( Period, false, true ); // Calculate DF and PF
+    thisEpoch.CalculateDF( Period, false, false ); // Calculate DF and PF
     string outTXT = "Output_Data/Elastic_DF_Data_"+ epoch +"_"+ Period;
     thisEpoch.WriteToCSV( outTXT, Period, " " ); // Writes data to a text or CSV file
 
