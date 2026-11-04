@@ -32,12 +32,14 @@ void GetPairTree(){
    //cin >> path_to_sidis >> TARGET_TYPE >> runStart >> runEnd >> thisDir;
    cin >> path1 >> path2 >> runToAnalyze >> PID >> fileExt;
 
+   cout << path1 <<" "<< path2 <<" "<< runToAnalyze <<" "<< PID <<" "<< fileExt << endl;
+
    // The following cuts off the "/slurm" part of the string
    int event_counter = 0; // Counts total number of events
 
    // These are used to subtract off from the "AccumulateCharge" QADB functions so the total
    // charges can be found on a run by run basis
-   double totalRUNcharge = 0.0;
+
    double totalHLMcharge = 0.0; // Charge for HEL +1 states (Tpol sign-corrected)
    double totalHLPcharge = 0.0; // Charge for HEL -1 states (Tpol sign-corrected)
    double totalHL0charge = 0.0; // Charge for HEL  0 states
@@ -54,7 +56,7 @@ void GetPairTree(){
 
    // instantiate QADB
    QADB* qa = new QADB("latest");
-
+/*
    // custom QA cut definition
    qa->SetMaskBit("TotalOutlier",false);
    qa->SetMaskBit("TerminalOutlier",false);
@@ -71,19 +73,17 @@ void GetPairTree(){
    qa->SetMaskBit("ChargeNegative",false);
    qa->SetMaskBit("ChargeUnknown",false);
    qa->SetMaskBit("PossiblyNoBeam",false);
-
- //for(int runToAnalyze = runStart; runToAnalyze <= runEnd; runToAnalyze++){
- //for( string TARGET_TYPE : Targets ){
+*/
  
   if( Period.isGoodRun( runToAnalyze ) ){
   
    //qa->SetMaskBit("Misc", Period.applyMiscBit(runToAnalyze) );
-
+/*
    if( runToAnalyze == 17482 ){
 	qa->SetMaskBit("TotalOutlier",false);
 	qa->SetMaskBit("TotalOutlierFT",false);
    }
-
+*/
    // Set the run period;
    string DataPeriod;
    if(      runToAnalyze > 16100 && runToAnalyze < 16800 ) DataPeriod = "Su22";
@@ -144,9 +144,9 @@ void GetPairTree(){
     string tfile_path = "/volatile/clas12/holmberg/";
     //string tfile_path = "/w/hallb-scshelf2102/clas12/holmberg/Dilution_Factors/";
 
-    if( runToAnalyze < 16800 ) tfile_path += "Summer_22_NoQA/"+ outPID+"_"+TARGET_TYPE+"_"+to_string(runToAnalyze)+"_"+fileExt+".root";
-    else if( runToAnalyze > 16800 && runToAnalyze < 17410 ) tfile_path += "Fall_22_NoQA/"+ outPID+"_"+TARGET_TYPE+"_"+to_string(runToAnalyze)+"_"+fileExt+".root";
-    else if( runToAnalyze > 17450 ) tfile_path += "Spring_23_NoQA/"+ outPID+"_"+TARGET_TYPE+"_"+to_string(runToAnalyze)+"_"+fileExt+".root";
+    if( runToAnalyze < 16800 ) tfile_path += "Summer_22_Data/"+ outPID+"_"+TARGET_TYPE+"_"+to_string(runToAnalyze)+"_"+fileExt+".root";
+    else if( runToAnalyze > 16800 && runToAnalyze < 17410 ) tfile_path += "Fall_22_Data/"+ outPID+"_"+TARGET_TYPE+"_"+to_string(runToAnalyze)+"_"+fileExt+".root";
+    else if( runToAnalyze > 17450 ) tfile_path += "Spring_23_Data/"+ outPID+"_"+TARGET_TYPE+"_"+to_string(runToAnalyze)+"_"+fileExt+".root";
 
     TFile* file = new TFile(tfile_path.c_str(), "RECREATE");
 
@@ -157,6 +157,8 @@ void GetPairTree(){
     TTree* tree = new TTree("Particle","Particle");
 
     // Variables to store in the particle tree
+    int qadb_mask_s1 = 0; int qadb_mask_s2 = 0; int qadb_mask_s3 = 0;
+    int qadb_mask_s4 = 0; int qadb_mask_s5 = 0; int qadb_mask_s6 = 0;
     int pid = 0; // Monte-carlo ID of particle
     int Status = 0; // Location of hit within CLAS12 geometry
     double Chi2PID = 0; // How closely PID matches time-of-flight information based on particle momentum
@@ -186,6 +188,12 @@ void GetPairTree(){
     double M2_EOUT = 0; // Second moment of the shower in the EOUT
 
     // Create branches on the tree to store all of the variables
+    tree->Branch("qadb_mask_s1", &qadb_mask_s1, "qadb_mask_s1/I");
+    tree->Branch("qadb_mask_s2", &qadb_mask_s2, "qadb_mask_s2/I");
+    tree->Branch("qadb_mask_s3", &qadb_mask_s3, "qadb_mask_s3/I");
+    tree->Branch("qadb_mask_s4", &qadb_mask_s4, "qadb_mask_s4/I");
+    tree->Branch("qadb_mask_s5", &qadb_mask_s5, "qadb_mask_s5/I");
+    tree->Branch("qadb_mask_s6", &qadb_mask_s6, "qadb_mask_s6/I");
     tree->Branch("pid", &pid, "pid/I");
     tree->Branch("Status", &Status, "Status/I");
     tree->Branch("Chi2PID", &Chi2PID, "Chi2PID/D");
@@ -215,6 +223,41 @@ void GetPairTree(){
     tree->Branch("M2_PCAL", &M2_PCAL, "M2_PCAL/D");
     tree->Branch("M2_ECIN", &M2_ECIN, "M2_ECIN/D");
     tree->Branch("M2_EOUT", &M2_EOUT, "M2_EOUT/D");
+
+    // Now create a tree to hold the FCup information
+    TTree* treeFC = new TTree("FaradayCup","FaradayCup");
+
+    // Variables to store in the particle treeFC
+    int qadb_fc_mask_s1 = 0; int qadb_fc_mask_s2 = 0; int qadb_fc_mask_s3 = 0;
+    int qadb_fc_mask_s4 = 0; int qadb_fc_mask_s5 = 0; int qadb_fc_mask_s6 = 0;
+    double fcup = 0;
+    double fcupgated = 0;
+    double clock = 0;
+    double clockgated = 0;
+    int helicity = 0;
+    int helicityRaw = 0;
+
+    // Create branches on the treeFC to store all of the variables
+    treeFC->Branch("fcup", &fcup, "fcup/D");
+    treeFC->Branch("fcupgated", &fcupgated, "fcupgated/D");
+    treeFC->Branch("clock", &clock, "clock/D");
+    treeFC->Branch("clockgated", &clockgated, "clockgated/D");
+    treeFC->Branch("helicity", &helicity, "helicity/I");
+    treeFC->Branch("helicityRaw", &helicityRaw, "helicityRaw/I");
+    treeFC->Branch("qadb_fc_mask_s1", &qadb_fc_mask_s1, "qadb_fc_mask_s1/I");
+    treeFC->Branch("qadb_fc_mask_s2", &qadb_fc_mask_s2, "qadb_fc_mask_s2/I");
+    treeFC->Branch("qadb_fc_mask_s3", &qadb_fc_mask_s3, "qadb_fc_mask_s3/I");
+    treeFC->Branch("qadb_fc_mask_s4", &qadb_fc_mask_s4, "qadb_fc_mask_s4/I");
+    treeFC->Branch("qadb_fc_mask_s5", &qadb_fc_mask_s5, "qadb_fc_mask_s5/I");
+    treeFC->Branch("qadb_fc_mask_s6", &qadb_fc_mask_s6, "qadb_fc_mask_s6/I");
+
+    // Create a tree to hold the fcup and fcup gated values from RUN_SCALER
+    TTree* treeRUN = new TTree("RUN_Scaler","RUN_Scaler");
+    // Add the two variables
+    double RUN_fcup = 0.0;
+    double RUN_fcupgated = 0.0;
+    treeRUN->Branch("RUN_fcup", &RUN_fcup, "RUN_fcup/D");
+    treeRUN->Branch("RUN_fcupgated", &RUN_fcupgated, "RUN_fcupgated/D");
 
     //Start loop on files
     for (int noffiles = 0; noffiles < files->GetEntries(); noffiles++){
@@ -256,13 +299,40 @@ void GetPairTree(){
 	int evnum = CONF.getInt("event",0);
 	int runnum= CONF.getInt("run",0); // Already read in, but this is a double-check
 
-      if( qa->Pass( runnum, evnum ) ) {
+      if( true ) {
+
+	int runRows = RUN_SCALER.getRows();
+	// RUN_SCALER accumulates as it goes along, so just keep overwritting
+	if( runRows > 0 ){
+	    RUN_fcup = RUN_SCALER.getDouble("fcup",0);
+	    RUN_fcupgated = RUN_SCALER.getDouble("fcupgated",0);
+	}
 	
 	int helRows = HEL_SCALER.getRows(); 
 	if( helRows > 0 ){
           //for(int row=0; row<HEL_SCALER.getRows(); row++){
 	      int hel = corr_factor * HEL_SCALER.getByte("helicity",0);
+	      vector<int> QADB_Masks = {0,0,0,0,0,0};
+	      // Query the QADB run and event number and grab the "OR" of all sectors' error bits
+	      if( qa->Query( runnum, evnum ) ) for( int s=1; s<=6; s++ ) QADB_Masks[s-1] = qa->GetDefect( s );
+	      qadb_fc_mask_s1 = QADB_Masks[0];
+	      qadb_fc_mask_s2 = QADB_Masks[1];
+	      qadb_fc_mask_s3 = QADB_Masks[2];
+	      qadb_fc_mask_s4 = QADB_Masks[3];
+	      qadb_fc_mask_s5 = QADB_Masks[4];
+	      qadb_fc_mask_s6 = QADB_Masks[5];      
+	      fcup = HEL_SCALER.getFloat("fcup",0);
+	      fcupgated = HEL_SCALER.getFloat("fcupgated",0);
+	      clock = HEL_SCALER.getFloat("clock",0);
+	      clockgated = HEL_SCALER.getFloat("clockgated",0);
+	      helicity = hel;
+	      helicityRaw = HEL_SCALER.getInt("helicityRaw",0);
+
+	      treeFC->Fill();
+
+
 	      // I swapped the helicity signs to match what I'm using for e- spins
+	      /*
 	   for(int h=0; h<helRows; h++){
 	      if(hel == 1){
 		     FCup_hel_n += HEL_SCALER.getFloat("fcupgated",h);
@@ -277,10 +347,11 @@ void GetPairTree(){
 		     FCup_ughel_0 += HEL_SCALER.getFloat("fcup",h);
 	      }
 	  }
+	      */
         }
 
-	qa->AccumulateCharge();   // Accumulate gated FC charge from QADB (from RUN::scaler I think??)
-	qa->AccumulateChargeHL(); // Accumulate gated, helicity-latched FC charge (from HEL::scaler)
+	//qa->AccumulateCharge();   // Accumulate gated FC charge from QADB (from RUN::scaler I think??)
+	//qa->AccumulateChargeHL(); // Accumulate gated, helicity-latched FC charge (from HEL::scaler)
 
         vector<Particle> Part = SetParticleData( PID, qa, corr_factor, CONF, PART, HEL, TRACK, TRAJ, CAL, CHKV, RASTER );
 	//   if( theta >= 5.0 && theta < 40.0 && w > 2.0 && Q2 > 1.0 && E > 2.6 && passedDCcut  ){
@@ -288,6 +359,12 @@ void GetPairTree(){
 	//if( Part.size() == 1 ){
 	for(auto P : Part ){
 
+	    qadb_mask_s1 = P.QADB_MASK_S1;
+	    qadb_mask_s2 = P.QADB_MASK_S2;
+	    qadb_mask_s3 = P.QADB_MASK_S3;
+	    qadb_mask_s4 = P.QADB_MASK_S4;
+	    qadb_mask_s5 = P.QADB_MASK_S5;
+	    qadb_mask_s6 = P.QADB_MASK_S6;
 	    pid = P.PID; 
 	    Status = P.Status;
 	    Chi2PID = P.Chi2PID;
@@ -331,6 +408,7 @@ void GetPairTree(){
    } // end of loop over all files on TChain
 
    // Write the raster constants
+   /*
    string rasterData = "/volatile/clas12/holmberg/";
    //string rasterData = "/w/hallb-scshelf2102/clas12/holmberg/Dilution_Factors/";
    if( runToAnalyze < 16800 ) rasterData += "Summer_22_Data/Text_Files/"+ outPID+"_"+TARGET_TYPE+"_"+to_string(runToAnalyze)+"_"+fileExt+"_FC_Info.txt";
@@ -348,9 +426,14 @@ void GetPairTree(){
    totalHLMcharge += qa->GetAccumulatedChargeHL(1)  - totalHLMcharge;
    totalHLPcharge += qa->GetAccumulatedChargeHL(-1) - totalHLPcharge;
    totalHL0charge += qa->GetAccumulatedChargeHL(0)  - totalHL0charge;
+   */
 
    tree->Write("Particle",TObject::kOverwrite); // Removes the autosave branches for simplicity
-   
+   treeFC->Write("FaradayCup",TObject::kOverwrite); // Removes the autosave branches for simplicity
+
+   treeRUN->Fill();
+   treeRUN->Write("RUN_Scaler",TObject::kOverwrite);
+  
    file->Close();
    cout << "Total events = "<< event_counter << endl;
    event_counter = 0;

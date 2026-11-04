@@ -13,7 +13,7 @@
  *
 ***********************************************************************************/
 
-#include "Input_Functions.h"
+#include "../Header_Files/Binning_Classes.h"
 
 using namespace std;
 
@@ -35,42 +35,106 @@ vector<double> FCup_Asymmetry( double Fp, double Fn, double ReadP, double ReadN 
 
 }
 
-// This function gets the Faraday cup charge for a given run
-void FCupLoop( string FilePath, string Filter, int runToAnalyze, ofstream& fout ){
+// This function returns an integer containing all the error bits to be set for a
+// given run.
+int ReturnErrorBits( RunPeriod& RP, int Run ){
 
-    cout << "Opening file for run "<< runToAnalyze << endl;
+    int ErrorBits = 0;
+
+    bool SetMiscBit = RP.applyMiscBit( Run );
+
+    // Binary holding all the error bits. Flip the misc bit if it's applicable
+    bitset<21> SetBits(0b011110000110000011111);
+    if( SetMiscBit ) SetBits.flip(5); // Flip bit 5 for misc
+
+    ErrorBits = SetBits.to_ulong(); // Truncated to an int
+
+    return ErrorBits;
+
+}
+
+// This function gets the Faraday cup charge for a given run
+//void FCupLoop( string FilePath, string Filter, int runToAnalyze, ofstream& fout, int ErrorBits, bool ApplyQA=false ){
+void FCupLoop( string FilePath, string Filter, int runToAnalyze, int ErrorBits=0, bool ApplyQA=false ){
+
+    cout << "Opening FC file for run "<< runToAnalyze << endl;
 
     ROOT::EnableImplicitMT();
 
-    ROOT::RDataFrame df("FaradayCup", string(FilePath+".root").c_str());
+    ROOT::RDataFrame dfFC( "FaradayCup", string(FilePath+".root").c_str() );
    
-    df.GetColumnNames();
+    dfFC.GetColumnNames();
 
-    // Apply filters and get the FCup charge for each helicity state
-    string helP_Filter = "("+ Filter +")&&( helicity == 1 )";
-    auto df_helP = df.Filter( helP_Filter.c_str() );
-    double fcup_HelP = *df_helP.Sum("fcupgated");
-    auto HelP_Counts = *df_helP.Count();
+    // if it's equal to zero, it passes the check
+    string S1_QADB  = "(qadb_fc_mask_s1 & "+to_string(ErrorBits)+") == 0";
+    string S2_QADB  = "(qadb_fc_mask_s2 & "+to_string(ErrorBits)+") == 0";
+    string S3_QADB  = "(qadb_fc_mask_s3 & "+to_string(ErrorBits)+") == 0";
+    string S4_QADB  = "(qadb_fc_mask_s4 & "+to_string(ErrorBits)+") == 0";
+    string S5_QADB  = "(qadb_fc_mask_s5 & "+to_string(ErrorBits)+") == 0";
+    string S6_QADB  = "(qadb_fc_mask_s6 & "+to_string(ErrorBits)+") == 0";
+    string All_QADB = "("+ S1_QADB +")&&("+ S2_QADB +")&&("+ S3_QADB +")&&("+ S4_QADB +")&&("+ S5_QADB +")&&("+ S6_QADB +")";
 
-    string helN_Filter = "("+ Filter +")&&( helicity == -1 )";
-    auto df_helN = df.Filter( helN_Filter.c_str() );
-    double fcup_HelN = *df_helN.Sum("fcupgated");
-    auto HelN_Counts = *df_helN.Count();
-/*
-    cout << "For run "<< runToAnalyze <<":\n";
-    cout << "--> FCup Hel +1 = "<< fcup_HelP <<", "<< HelP_Counts <<" counts\n";
-    cout << "--> FCup Hel -1 = "<< fcup_HelN <<", "<< HelN_Counts <<" counts\n";
-    vector<double> FC_Asyms = FCup_Asymmetry( fcup_HelP, fcup_HelN, HelP_Counts, HelN_Counts );
-    cout << FC_Asyms[0] <<" +- "<< FC_Asyms[1] << endl;
-*/
-    //vector<double> FCup_Values = { fcup_HelP, fcup_HelN, HelP_Counts, HelN_Counts };
-    //return FCup_Values;
-    fout << runToAnalyze <<"   "<< fcup_HelP <<"   "<< fcup_HelN <<"   "<< HelP_Counts <<"   "<< HelN_Counts <<"   ";
+    // Apply filters and get the FCup charge for each helicity state, no QADB cuts
+    string helP_Filter;
+    if( ApplyQA ) helP_Filter = "("+ Filter +")&&( helicity == 1 )&&("+ All_QADB +")";
+    else helP_Filter = "("+ Filter +")&&( helicity == 1 )";
+
+    string helN_Filter;
+    if( ApplyQA ) helN_Filter = "("+ Filter +")&&( helicity == -1 )&&("+ All_QADB +")";
+    else helN_Filter = "("+ Filter +")&&( helicity == -1 )";
+
+    string hel0_Filter;
+    if( ApplyQA ) hel0_Filter = "("+ Filter +")&&( helicity == 0 )&&("+ All_QADB +")";
+    else hel0_Filter = "("+ Filter +")&&( helicity == 0 )";
+
+    auto dfFC_helP = dfFC.Filter( helP_Filter.c_str() );
+    double fcupgated_HelP = *dfFC_helP.Sum("fcupgated");
+    double fcup_HelP = *dfFC_helP.Sum("fcup");
+    auto HelP_Counts = *dfFC_helP.Count();
+
+    auto dfFC_helN = dfFC.Filter( helN_Filter.c_str() );
+    double fcupgated_HelN = *dfFC_helN.Sum("fcupgated");
+    double fcup_HelN = *dfFC_helN.Sum("fcup");
+    auto HelN_Counts = *dfFC_helN.Count();
+
+    auto dfFC_hel0 = dfFC.Filter( hel0_Filter.c_str() );
+    double fcupgated_Hel0 = *dfFC_hel0.Sum("fcupgated");
+    double fcup_Hel0 = *dfFC_hel0.Sum("fcup");
+    auto Hel0_Counts = *dfFC_hel0.Count();
+
+    // Also grab the run scaler information; no QA cuts are given to this charge, at least not in this file for now...
+    ROOT::RDataFrame dfRUN("RUN_Scaler", string(FilePath+".root").c_str() );
+
+    dfRUN.GetColumnNames();
+
+    double RUN_fcup = *dfRUN.Sum("RUN_fcup");
+    double RUN_fcupgated = *dfRUN.Sum("RUN_fcupgated");
+
+    // Write the variables to the ROOT file. First create a tree to hold the values
+    TTree* FC_Tree = new TTree("FCup","FCup");
+    
+    FC_Tree->Branch( "fcup_HelP", &fcup_HelP, "fcup_HelP/D" );
+    FC_Tree->Branch( "fcupgated_HelP", &fcupgated_HelP, "fcupgated_HelP/D" );
+    FC_Tree->Branch( "HelP_Counts", &HelP_Counts, "HelP_Counts/I" );
+    FC_Tree->Branch( "fcup_HelN", &fcup_HelN, "fcup_HelN/D" );
+    FC_Tree->Branch( "fcupgated_HelN", &fcupgated_HelN, "fcupgated_HelN/D" );
+    FC_Tree->Branch( "HelN_Counts", &HelN_Counts, "HelN_Counts/I" );
+    FC_Tree->Branch( "fcup_Hel0", &fcup_Hel0, "fcup_Hel0/D" );
+    FC_Tree->Branch( "fcupgated_Hel0", &fcupgated_Hel0, "fcupgated_Hel0/D" );
+    FC_Tree->Branch( "Hel0_Counts", &Hel0_Counts, "Hel0_Counts/I" );
+
+    FC_Tree->Branch( "RUN_fcup", &RUN_fcup, "RUN_fcup/D" );
+    FC_Tree->Branch( "RUN_fcupgated", &RUN_fcupgated, "RUN_fcupgated/D" );
+ 
+    FC_Tree->Fill(); 
+    FC_Tree->Write();
+ 
+    //fout << runToAnalyze <<"   "<< fcupgated_HelP <<"   "<< fcupgated_HelN <<"   "<< HelP_Counts <<"   "<< HelN_Counts <<"   ";
 
 }
 
 // Loops over a set of input files and writes the histograms to a ROOT file
-void FileLoop( string FilePath, string Filter, int runToAnalyze ){
+void FileLoop( string FilePath, string Filter, int runToAnalyze, int ErrorBits=0, bool ApplyQA=false ){
 
     ROOT::EnableImplicitMT();
 
@@ -80,17 +144,24 @@ void FileLoop( string FilePath, string Filter, int runToAnalyze ){
     //cout << df.Count().GetValue() << endl;
     df.GetColumnNames();
 
+    // if it's equal to zero, it passes the check
+    string S1_QADB  = "(qadb_mask_s1 & "+to_string(ErrorBits)+") == 0";
+    string S2_QADB  = "(qadb_mask_s2 & "+to_string(ErrorBits)+") == 0";
+    string S3_QADB  = "(qadb_mask_s3 & "+to_string(ErrorBits)+") == 0";
+    string S4_QADB  = "(qadb_mask_s4 & "+to_string(ErrorBits)+") == 0";
+    string S5_QADB  = "(qadb_mask_s5 & "+to_string(ErrorBits)+") == 0";
+    string S6_QADB  = "(qadb_mask_s6 & "+to_string(ErrorBits)+") == 0";
+    string All_QADB = "("+ S1_QADB +")&&("+ S2_QADB +")&&("+ S3_QADB +")&&("+ S4_QADB +")&&("+ S5_QADB +")&&("+ S6_QADB +")";
+
+    if( ApplyQA ) Filter = "("+ Filter +")&&("+ All_QADB +")";
+
     // Define strings that are used in the Define commands to create relevant variables...
     //string nucMass = format( "{:.9f}", nucleon_mass );
     stringstream sm; sm << fixed << setprecision(9) << nucleon_mass;
     string nucMass = sm.str();
 
     string beamEng; // Declare the energy based on run period
-/*
-    if( runToAnalyze < 17066 ) beamEng = format( "{:.4f}", beam_energy1 );
-    else if( runToAnalyze >= 17067 && runToAnalyze <= 17704 ) beamEng = format( "{:.4f}", beam_energy2 );
-    else if( runToAnalyze >= 17720 ) beamEng = format( "{:.4f}", beam_energy3 );
-*/
+
     stringstream s;
     if( runToAnalyze < 17066 ){
 	s << fixed << setprecision(4) << beam_energy1;
@@ -112,12 +183,7 @@ void FileLoop( string FilePath, string Filter, int runToAnalyze ){
     //cout << Filter << endl;
 
     cout <<"Starting input loop on run "<< runToAnalyze <<"...\n";
-/*
-    cout << nucMass <<"  "<< beamEng << endl;
-    cout << Q2_Variable << endl;
-    cout << W_Variable << endl;
-    cout << X_Variable << endl;
-*/
+
     // Define new branches that weren't saved in the files for space reasons...
     auto df_extra =   df.Define("Pt", "TMath::Sqrt(Px*Px+Py*Py+Pz*Pz)") \
 		        .Define("theta", "TMath::ACos(Pz/Pt)*180.0/M_PI") \
@@ -155,8 +221,12 @@ void FileLoop( string FilePath, string Filter, int runToAnalyze ){
     auto df_helMinus = df_filtered.Filter("Helicity == -1");
     auto Q2BinData_HelMinus = df_helMinus.Profile2D({"Q2BinData_HelMinus","Q2 Bin Data; Q2 [GeV^{2}]; X",nQ2Bins, Q2_Bin_Bounds.data(), nXBins, X_Bin_Bounds.data()},"Q2","X","Q2");
     auto XBinData_HelMinus = df_helMinus.Profile2D({"XBinData_HelMinus"  ,"X Bin Data; Q2 [GeV^{2}]; X", nQ2Bins, Q2_Bin_Bounds.data(), nXBins, X_Bin_Bounds.data()},"Q2","X","X");
+    // Helicity 0
+    auto df_helZero = df_filtered.Filter("Helicity == 0");
+    auto Q2BinData_HelZero = df_helZero.Profile2D({"Q2BinData_HelZero","Q2 Bin Data; Q2 [GeV^{2}]; X",nQ2Bins, Q2_Bin_Bounds.data(), nXBins, X_Bin_Bounds.data()},"Q2","X","Q2");
+    auto XBinData_HelZero = df_helZero.Profile2D({"XBinData_HelZero"  ,"X Bin Data; Q2 [GeV^{2}]; X", nQ2Bins, Q2_Bin_Bounds.data(), nXBins, X_Bin_Bounds.data()},"Q2","X","X");
 
-/*
+    // Various kinematic plots used for diagnostics
     auto Theta    = df_filtered.Histo1D({"Theta","Theta Distribution; #theta [deg];",450,0,45},"theta");
     auto Phi      = df_filtered.Histo1D({"Phi","Phi Distribution; #phi [deg];",3600,-180,180},"phi");
     auto Nphe     = df_filtered.Histo1D({"nphe","Photoelectrons; Nphe;;",50,0,50},"nphe");
@@ -192,7 +262,7 @@ void FileLoop( string FilePath, string Filter, int runToAnalyze ){
     auto BetaVsP     = df_filtered.Histo2D({"BetaVsP","#beta vs. Momentum; P [GeV]; #beta",110,0,11,110,0,1.1},"Pt","Beta");
     auto SFvsM2      = df_filtered.Histo2D({"SFvsM2","Sampling Fraction vs. M2; M2 [cm^{2}]; SF",450,0,450,40,0,0.4},"M2","SF");
     auto NphevsM2    = df_filtered.Histo2D({"NphevsM2","Photoelectrons vs. M2; M2 [cm^{2}]; Nphe",450,0,450,50,0,50},"M2","nphe");   
-*/
+
     //auto PcalSFvsPcalLv  = df_filtered.Histo2D({"PcalPcalLv","PCAL SF vs. PCAL Lv; Lv [cm]; SF",100,0,450,40,0,0.4},"PcalLv","SF");
     //auto PcalSFvsPcalLw  = df_filtered.Histo2D({"PcalPcalLw","PCAL SF vs. PCAL Lw; Lw [cm]; SF",100,0,450,40,0,0.4},"PcalLw","SF");
 
@@ -232,8 +302,9 @@ void FileLoop( string FilePath, string Filter, int runToAnalyze ){
     XBinData_HelPlus->Write();
     Q2BinData_HelMinus->Write();
     XBinData_HelMinus->Write();
+    Q2BinData_HelZero->Write();
+    XBinData_HelZero->Write();
 
-/*
     Nphe->Write();
     Theta->Write();
     Phi->Write();
@@ -268,31 +339,105 @@ void FileLoop( string FilePath, string Filter, int runToAnalyze ){
     SFvsM2->Write();
     NphevsM2->Write();
 
-    PcalSF_S1->Write();
-    PcalSF_S2->Write();
-*/
+    //PcalSF_S1->Write();
+    //PcalSF_S2->Write();
+
+    // Now move on to parse the faraday cup information...
+/*
+    cout << "Opening file for run "<< runToAnalyze << endl;
+
+    ROOT::EnableImplicitMT();
+
+    ROOT::RDataFrame dfFC("FaradayCup", string(FilePath+".root").c_str());
+   
+    dfFC.GetColumnNames();
+
+    // if it's equal to zero, it passes the check
+    string S1_FC_QADB  = "(qadb_fc_mask_s1 & "+to_string(ErrorBits)+") == 0"
+    string S2_FC_QADB  = "(qadb_fc_mask_s2 & "+to_string(ErrorBits)+") == 0"
+    string S3_FC_QADB  = "(qadb_fc_mask_s3 & "+to_string(ErrorBits)+") == 0"
+    string S4_FC_QADB  = "(qadb_fc_mask_s4 & "+to_string(ErrorBits)+") == 0"
+    string S5_FC_QADB  = "(qadb_fc_mask_s5 & "+to_string(ErrorBits)+") == 0"
+    string S6_FC_QADB  = "(qadb_fc_mask_s6 & "+to_string(ErrorBits)+") == 0"
+    string All_FC_QADB = "("+ S1_FC_QADB +")&&("+ S2_FC_QADB +")&&(" + S3_FC_QADB +")&&(" +S4_FC_QADB +")&&(" +S5_FC_QADB +")&&(" S6_FC_QADB +")";
+
+    // Apply filters and get the FCup charge for each helicity state, no QADB cuts
+    string helP_Filter;
+    if( ApplyQA ) helP_Filter = "("+ Filter +")&&( helicity == 1 )&&("+ All_FC_QADB +")";
+    else helP_Filter = "("+ Filter +")&&( helicity == 1 )";
+
+    string helN_Filter;
+    if( ApplyQA ) helN_Filter = "("+ Filter +")&&( helicity == -1 )&&("+ All_FC_QADB +")";
+    else helN_Filter = "("+ Filter +")&&( helicity == -1 )";
+
+    string hel0_Filter;
+    if( ApplyQA ) hel0_Filter = "("+ Filter +")&&( helicity == 0 )&&("+ All_FC_QADB +")";
+    else hel0_Filter = "("+ Filter +")&&( helicity == 0 )";
+
+    auto dfFC_helP = dfFC.Filter( helP_Filter.c_str() );
+    double fcupgated_HelP = *dfFC_helP.Sum("fcupgated");
+    double fcup_HelP = *dfFC_helP.Sum("fcup");
+    auto HelP_Counts = *dfFC_helP.Count();
+
+    auto dfFC_helN = dfFC.Filter( helN_Filter.c_str() );
+    double fcupgated_HelN = *dfFC_helN.Sum("fcupgated");
+    double fcup_HelN = *dfFC_helN.Sum("fcup");
+    auto HelN_Counts = *dfFC_helN.Count();
+
+    auto dfFC_hel0 = dfFC.Filter( hel0_Filter.c_str() );
+    double fcupgated_Hel0 = *dfFC_hel0.Sum("fcupgated");
+    double fcup_Hel0 = *dfFC_hel0.Sum("fcup");
+    auto Hel0_Counts = *dfFC_hel0.Count();
+
+    // Also grab the run scaler information; no QA cuts are given to this charge, at least not in this file for now...
+    ROOT::RDataFrame dfRUN("RUN_Scaler", string(FilePath+".root").c_str() );
+
+    dfRUN.GetColumnNames();
+
+    double RUN_fcup = dfRUN.Value("RUN_fcup");
+    double RUN_fcupgated = dfRUN.Value("RUN_fcupgated");
+
+    // Write the variables to the ROOT file. First create a tree to hold the values
+    TTree* FC_Tree = new TTree("FCup","FCup");
+    
+    FC_Tree->Branch( "fcup_HelP", &fcup_HelP, "fcup_HelP/D" );
+    FC_Tree->Branch( "fcupgated_HelP", &fcupgated_HelP, "fcupgated_HelP/D" );
+    FC_Tree->Branch( "HelP_Counts", &HelP_Counts, "HelP_Counts/I" );
+    FC_Tree->Branch( "fcup_HelN", &fcup_HelN, "fcup_HelN/D" );
+    FC_Tree->Branch( "fcupgated_HelN", &fcupgated_HelN, "fcupgated_HelN/D" );
+    FC_Tree->Branch( "HelN_Counts", &HelN_Counts, "HelN_Counts/I" );
+    FC_Tree->Branch( "fcup_Hel0", &fcup_Hel0, "fcup_Hel0/D" );
+    FC_Tree->Branch( "fcupgated_Hel0", &fcupgated_Hel0, "fcupgated_Hel0/D" );
+    FC_Tree->Branch( "Hel0_Counts", &Hel0_Counts, "Hel0_Counts/I" );
+
+    FC_Tree->Branch( "RUN_fcup", &RUN_fcup, "RUN_fcup/D" );
+    FC_Tree->Branch( "RUN_fcupgated", &RUN_fcupgated, "RUN_fcupgated/D" );
+  
+    FC_Tree->Write();
+ */
     cout <<"Finished loop on run "<< runToAnalyze <<"...\n";
 }
 
-void Data_Loop(string runperiod){
 
-/* Things to add:
- * Run-dependent PCAL fiducial cut
- * Run-dependent vertex cut
- * Run-dependent SF cut
- */
+// The main loop for parsing the data files...
+//void Data_Loop(string runperiod){
+void Data_Loop(){
+
+  int thisRun;
+  cin >> thisRun;
 
   // Start a loop over all runs:
   RunPeriod Period;
 
   // Output file for all the fcup values
-  ofstream fout( string("LatestSkim/Text_Files/"+ runperiod +"_FCup_Data.txt") );
-  
+  //ofstream fout_NoQA( string("LatestSkim/Text_Files/"+ runperiod +"_FCup_Data_NoQA.txt") );
+  //ofstream fout(      string("LatestSkim/Text_Files/"+ runperiod +"_FCup_Data.txt")      );
+ 
   // Get all good runs to read in:
   //vector<int> All_Runs = Period.getAllGoodRuns();
-  vector<int> All_Runs = Period.getDataSetGoodRuns( runperiod );
+  //vector<int> All_Runs = Period.getDataSetGoodRuns( runperiod );
 
-  //vector<int> All_Runs = { 16137 };//, 17796, 17797 };
+  vector<int> All_Runs = { thisRun };//, 17796, 17797 };
  
   for( int Run : All_Runs ){
 
@@ -383,24 +528,36 @@ void Data_Loop(string runperiod){
 	fcupFile    = "../FCup_Analysis/SpringOutb/Electron_"+ Target +"_"+ to_string( Run ) +"_FCup";
     }
 
-    //string TotalCutAllSu22 = "("+ DC_Cuts +")&&("+ PCAL_Cuts +")&&("+ Vertex_Cuts + ")&&("+ Total_Su22_SF_Cut +")&&("+ Kinematic_Cuts +")&&( pid == 11 )";
-
     string TotalCut = "("+ DC_Cuts +")&&("+ PCAL_Cuts +")&&("+ Vertex_Cuts + ")&&("+ SF_Cuts +")&&("+ Kinematic_Cuts +")&&( pid == 11 )&&( Helicity != 0 )";
 
-    string outFileName = "LatestSkim/" + Period.getTargetType( Run ) +"_"+ to_string( Run ) +"_Data.root";
+    // Create a set of runs without QADB cuts applied
+    string outFileName = "../Latest_Skims/ROOT_Files_NoQA/" + Period.getTargetType( Run ) +"_"+ to_string( Run ) +"_Data_NoQA.root";
 
     TFile* outFileTest = new TFile( outFileName.c_str() , "RECREATE" );
     FileLoop( inputFile, TotalCut, Run );
+    FCupLoop( inputFile, "(fcupgated > 0) && (clockgated > 1000)", Run );
+
     outFileTest->Close();
 
-    FCupLoop( fcupFile, "(fcupgated > 0) && (clockgated > 1000)", Run, fout );
-    FCupLoop( fcupFile, "(clockgated > -100000)", Run, fout );
-    fout << endl;
+    // Create a set of run with the QADB cuts applied
+    outFileName = "../Latest_Skims/ROOT_Files/" + Period.getTargetType( Run ) +"_"+ to_string( Run ) +"_Data.root";
+
+    int ErrorBits = ReturnErrorBits( Period, Run ); // Get the error bits set for this run
+
+    TFile* outFileQA = new TFile( outFileName.c_str(), "RECREATE" );
+    FileLoop( inputFile, TotalCut, Run, ErrorBits, true );
+    FCupLoop( inputFile, "(fcupgated > 0) && (clockgated > 1000)", Run, ErrorBits, true );
+
+    outFileQA->Close();
+
+    //FCupLoop( fcupFile, "(fcupgated > 0) && (clockgated > 1000)", Run, fout );
+    //FCupLoop( fcupFile, "(clockgated > -100000)", Run, fout );
+    //fout << endl;
 
     //cout << Run << endl;
 
   } // End of file loop
 
-  fout.close();
+  //fout.close();
 
 }

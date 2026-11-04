@@ -19,6 +19,8 @@ runs=(  "16128" "16134" "16137" "16138" "16144" "16145" "16146" "16148" "16156" 
 "16738" "16742" "16743" "16744" "16746" "16747" "16748" "16749" "16750" "16751" "16752" "16753" "16754" "16755" "16756" "16757" "16758" "16759" "16761" "16762" "16763"
 "16765" "16766" "16767" "16768" "16769" "16770" "16771" "16772" )
 
+test_run=( "16224" )
+
 VERSION="pass1"
 PERIOD="summer22"
 #THISDIR= pwd | tr -d '\n'
@@ -36,6 +38,7 @@ for run in "${runs[@]}"
 do
     echo $PATH1 $PATH2 $run $PID $FILEEXT $THISDIR
 
-    sbatch ${THISDIR}/GetPairTree.slurm $PATH1 $PATH2 $run $PID $FILEEXT $THISDIR
+    #sbatch ${THISDIR}/GetPairTree.slurm $PATH1 $PATH2 $run $PID $FILEEXT $THISDIR
+    sbatch ${THISDIR}/GetPairTree.slurm $PATH1 $PATH2 $run $PID $FILEEXT
 
 done

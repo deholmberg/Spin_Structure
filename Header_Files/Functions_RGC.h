@@ -60,6 +60,62 @@ double getLocalPhi(double x, double y, int sector){
     else return phi - 60*(sector-1);
 }
 
+// This function applies Timothy's momentum corrections to the elastic electron momenta. The angle passed in must be
+// given in degrees! Valid for ranges between 8-15 degrees and is unique based on sector. Outside this range,
+// the function is evaluated at either 8 or 15 degrees. The function takes the total momentum and returns the
+// corrected momentum based on "p_corr = [1 + delta_th]*p_elec", where "delta_th" is calculated for a given sector.
+double MomentumCorrection( double p_elec, double theta, int sector, int run ){
+
+    // If sector is invalid, apply no correction
+    if( sector <= 0 || sector > 6 ){ 
+	//cout <<"ERROR: Invalid sector. No correction applied.\n";
+	return p_elec;
+    }
+
+    // Set the angle to the appropriate range
+    if( theta <= 0 ) return p_elec; // error case
+    else if( theta < 8 ) theta = 8;
+    else if( theta > 15 ) theta = 15;
+
+    // Apply the correction, based on sector and run period (gross lol)
+    if( run < 16850 ){ // Summer 2022
+	if( sector == 1 )      return p_elec*(1 - 0.003276 + 0.00039819*theta);
+	else if( sector == 2 ) return p_elec*(1 + 0.004490 - 0.00014350*theta);
+	else if( sector == 3 ) return p_elec*(1 + 0.004677 - 0.00042114*theta);
+	else if( sector == 4 ) return p_elec*(1 + 0.002444 - 0.000093691*theta);
+	else if( sector == 5 ) return p_elec*(1 + 0.001267 - 0.00022314*theta);
+	else if( sector == 6 ) return p_elec*(1 - 0.001890 + 0.000063591*theta);
+    }
+    else if( run > 16850 && run < 17185 ){ // Fall 2022 (Neg. Sol.)
+	if( sector == 1 )      return p_elec*(1 + 0.00019971 + 0.00010813*theta);
+	else if( sector == 2 ) return p_elec*(1 + 0.004853   - 0.00011926*theta);
+	else if( sector == 3 ) return p_elec*(1 + 0.009825   - 0.00063016*theta);
+	else if( sector == 4 ) return p_elec*(1 + 0.003173   + 0.00020016*theta);
+	else if( sector == 5 ) return p_elec*(1 + 0.007813   - 0.00067382*theta);
+	else if( sector == 6 ) return p_elec*(1 + 0.005404   - 0.00046323*theta);
+    }
+    else if( run > 17185 && run < 17450 ){ // Fall 2022 (Pos. Sol.)
+	if( sector == 1 )      return p_elec*(1 - 0.00098063 + 0.00010435*theta);
+	else if( sector == 2 ) return p_elec*(1 + 0.016937   - 0.002505*theta + 0.00010245*theta*theta);
+	else if( sector == 3 ) return p_elec*(1 + 0.008040   - 0.00064998*theta);
+	else if( sector == 4 ) return p_elec*(1 - 0.010207   + 0.002954*theta - 0.00013456*theta*theta);
+	else if( sector == 5 ) return p_elec*(1 + 0.005466   - 0.00042851*theta);
+	else if( sector == 6 ) return p_elec*(1 + 0.020615   - 0.003468*theta + 0.00013870*theta*theta);
+    }
+    else if( run > 17450 /*&& run < 17768*/ ){ // Spring 2023 (Inb. and Outb.???)
+	if( sector == 1 )      return p_elec*(1 - 0.017000   + 0.003460*theta - 0.00016146*theta*theta);
+	else if( sector == 2 ) return p_elec*(1 + 0.009163   - 0.00045048*theta);
+	else if( sector == 3 ) return p_elec*(1 + 0.014589   - 0.001394*theta);
+	else if( sector == 4 ) return p_elec*(1 + 0.004071   - 0.00035391*theta);
+	else if( sector == 5 ) return p_elec*(1 + 0.003038   - 0.00050218*theta);
+	else if( sector == 6 ) return p_elec*(1 + 0.003121   - 0.00036366*theta);
+    }
+
+    //cout <<"ERROR: Invalid run "<< run <<"; no correction applied.\n";
+    return p_elec;
+
+}
+
 
 // Holds information for calculating various kinematic quantities.
 // Electron mass is ignored for all calculations in this program.
@@ -74,6 +130,9 @@ TLorentzVector TargetProton = TLorentzVector( 0, 0, 0, nucleon_mass );
 class Particle{
 
   public:
+	// Integers holding the error bits for each sector
+	int QADB_MASK_S1 = 0; int QADB_MASK_S2 = 0; int QADB_MASK_S3 = 0;
+	int QADB_MASK_S4 = 0; int QADB_MASK_S5 = 0; int QADB_MASK_S6 = 0;
 	int Run = 0; // Run number of this particular particle
 	int PID = 0; // Monte-carlo ID of particle
 	int Status = 0; // Location of hit within CLAS12 geometry
@@ -120,7 +179,8 @@ class Particle{
 	// Mutator
 	void SetData( stringstream& sin ){
 	    //stringstream sin(inputString);
-	    sin >> PID >> Status >> Chi2PID >> Helicity >> Charge >> Px >> Py >> Pz >> Vz >> TrackChi2NDF >> EdgeR1 >> EdgeR2
+	    sin >> QADB_MASK_S1 >> QADB_MASK_S2 >> QADB_MASK_S3 >> QADB_MASK_S4 >> QADB_MASK_S5 >> QADB_MASK_S6
+		>> PID >> Status >> Chi2PID >> Helicity >> Charge >> Px >> Py >> Pz >> Vz >> TrackChi2NDF >> EdgeR1 >> EdgeR2
 		>> EdgeR3 >> SectorDC >> SectorECAL >> SectorHTCC
 		>> PcalX >> PcalY >> PcalE >> PcalLu >> PcalLv >> PcalLw
 		>> EcinX >> EcinY >> EcinE >> EcinLu >> EcinLv >> EcinLw
@@ -198,6 +258,8 @@ class Particle{
 	    }
 	}
 	void Reset(){ // Resets the values of the particle to zero if there's an invalid input from the HIPO file
+	    QADB_MASK_S1 = 0; QADB_MASK_S2 = 0; QADB_MASK_S3 = 0;
+	    QADB_MASK_S4 = 0; QADB_MASK_S5 = 0; QADB_MASK_S6 = 0;
 	    PID = 0; // Monte-carlo ID of particle
 	    Status = 0; // Location of hit within CLAS12 geometry
 	    Chi2PID = 0; // How closely PID matches time-of-flight information based on particle momentum
@@ -301,7 +363,6 @@ class Particle{
 
 // This is a pretty hefty function that takes the input banks from a HIPO file and writes the contents of the first particle from the REC::Particle bank to 
 // the Particle class object
-//vector<Particle> SetParticleData( int PID, QADB* qa, const int corr_factor, bank& CONF, bank& PART, bank& HEL, bank& TRACK, bank& TRAJ, bank& CAL, bank& CHKV ){
 vector<Particle> SetParticleData( int PID, QADB* qa, const int corr_factor, bank& CONF, bank& PART, bank& HEL, bank& TRACK, bank& TRAJ, bank& CAL, bank& CHKV, bank& RASTER ){
 
         int evnum = CONF.getInt("event",0);
@@ -314,7 +375,6 @@ vector<Particle> SetParticleData( int PID, QADB* qa, const int corr_factor, bank
     int trigStatus = PART.getInt("status",0);
     bool isTrigElec = trigPID == 11 && trigStatus > -4000 && trigStatus < -2000;
 
-    //if(qa->Pass(runnum,evnum)) {
         // First, check the PID
         for(int i=0; i<PART.getRows(); i++){ //#1
 	    Particle P;
@@ -329,9 +389,13 @@ vector<Particle> SetParticleData( int PID, QADB* qa, const int corr_factor, bank
 	    else pidCut = pid == PID; // This just causes the program to effectively ignore this flag if it's not an electron the user's looking for
 	    // This check is for a very specific case of getting all available electrons, pi+, and pi-
 
-	    bool qaPass = qa->Pass(runnum,evnum); // Of course, ignore the qa if looking at MC data
-            //if( pid == PID && qaPass ){ //#2
-            if( pidCut && qaPass ){ //#2
+            if( pidCut ){ //#2
+
+		vector<int> QADB_Masks = {0,0,0,0,0,0};
+
+		// Query the QADB run and event number and grab the "OR" of all sectors' error bits
+		if( qa->Query( runnum, evnum ) ) for( int s=1; s<=6; s++ ) QADB_Masks[s-1] = qa->GetDefect( s );
+
                 // For each particle, get its kinematic and detector geometry info
                 double partP[3] = { PART.getFloat("px",i), PART.getFloat("py",i), PART.getFloat("pz",i) };
                 double vx = PART.getFloat("vx",i); // the x vertex
@@ -435,6 +499,7 @@ vector<Particle> SetParticleData( int PID, QADB* qa, const int corr_factor, bank
                 if( ndf != 0 && abs(charge) == 1 ){
 		    // Get the raster positions
 		    //evCount++;
+		    for(int mask : QADB_Masks ) sout << mask <<" ";
                     sout << pid<<" "<< status<<" "<< chi2pid<<" "<< corrHelicity<<" "<< charge <<" "<< partP[0]<<" "<< partP[1]<<" "<< partP[2]<<" "<< vz<<" "<< chi2/ndf<<" "<< edgeRegion[0]<<" "<< edgeRegion[1]<<" ";
                     sout<<edgeRegion[2]<<" "<<sectorDC<<" "<<sectorECAL<<" "<< HTCCsector <<" "<< pcalXY[0]<<" "<< pcalXY[1]<<" "<< calEnergy[0]<<" "<< pcalL[0]<<" "<< pcalL[1]<<" "<< pcalL[2]<<" ";
                     sout << ecinXY[0]<<" "<< ecinXY[1]<<" "<< calEnergy[1]<<" "<< ecinL[0]<<" "<< ecinL[1]<<" "<< ecinL[2]<<" ";
@@ -449,33 +514,11 @@ vector<Particle> SetParticleData( int PID, QADB* qa, const int corr_factor, bank
 		    P.SetData( sout );
 		    Particles.push_back( P );
 		} // end of if checking ndf and charge
-/*
-		else if( PID == 22 || PID == 2112 ){
-
-                    sout << pid<<" "<< status<<" "<< chi2pid<<" "<< corrHelicity<<" "<< charge <<" "<< partP[0]<<" "<< partP[1]<<" "<< partP[2]<<" "<< vz<<" "<< 0 <<" "<< edgeRegion[0]<<" "<< edgeRegion[1]<<" ";
-                    sout<<edgeRegion[2]<<" "<<sectorDC<<" "<<sectorECAL<<" "<< HTCCsector <<" "<< pcalXY[0]<<" "<< pcalXY[1]<<" "<< calEnergy[0]<<" "<< pcalL[0]<<" "<< pcalL[1]<<" "<< pcalL[2]<<" ";
-                    sout << ecinXY[0]<<" "<< ecinXY[1]<<" "<< calEnergy[1]<<" "<< ecinL[0]<<" "<< ecinL[1]<<" "<< ecinL[2]<<" ";
-                    sout << eoutXY[0]<<" "<< eoutXY[1]<<" "<< calEnergy[2]<<" "<< eoutL[0]<<" "<< eoutL[1]<<" "<< eoutL[2]<<" "<< nphe <<" ";// << endl;
-		    sout << X_POS_DC[0]<<" "<< Y_POS_DC[0]<<" "<< Z_POS_DC[0] <<" ";
-		    sout << X_POS_DC[1]<<" "<< Y_POS_DC[1]<<" "<< Z_POS_DC[1] <<" ";
-		    sout << X_POS_DC[2]<<" "<< Y_POS_DC[2]<<" "<< Z_POS_DC[2] <<" ";
-		    sout << vx <<" "<< vy <<" "<< rx <<" "<< ry <<" "<< runnum; // Passing in the zeros just keeps the raster position turned off
-		    P.SetData( sout );
-		    Particles.push_back( P );
-		}
-*/
 		//else P->Reset(); // That way, the rest of the input loop knows it's an invalid read in
 	    } //end of #2
 	    //else P->Reset();
 	} //end of #1
 	
-	// Before returning the particle, make sure it's a valid hit
-	//if( !P->IsGoodECAL() || !P->IsGoodDC() ) P->Reset();
-
-    //}
-
-	//if( Particles.size() == 0 ) cout << "No particles in event.\n";	
-
 	return Particles;
 	
 

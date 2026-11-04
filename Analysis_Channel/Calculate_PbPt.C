@@ -1063,6 +1063,23 @@ void Calculate_PbPt(){
     cout <<"---> Sp23Inb Neg PNF = "<< Sp23Inb_Neg_PNFs[0] <<" +- "<< Sp23Inb_Neg_PNFs[1] << endl;
     cout << endl;
 
+    // Calculate weighted average of everything together...
+    vector<double> All_PNFs = { Su22_Pos_PNFs[0], Su22_Neg_PNFs[0],
+ Fa22Neg_Pos_PNFs[0], Fa22Neg_Neg_PNFs[0],
+ Fa22Pos_Pos_PNFs[0], Fa22Pos_Neg_PNFs[0],
+ Sp23Inb_Pos_PNFs[0], Sp23Inb_Neg_PNFs[0] };
+
+    vector<double> All_PNF_Errs = { Su22_Pos_PNFs[1], Su22_Neg_PNFs[1],
+ Fa22Neg_Pos_PNFs[1], Fa22Neg_Neg_PNFs[1],
+ Fa22Pos_Pos_PNFs[1], Fa22Pos_Neg_PNFs[1],
+ Sp23Inb_Pos_PNFs[1], Sp23Inb_Neg_PNFs[1] };
+
+    vector<double> Total_PNFs = WeightedAverage( All_PNFs, All_PNF_Errs );
+    cout <<"Total weighted average PNF:\n";
+    cout <<"---> PNF = "<< Total_PNFs[0] <<" +- "<< Total_PNFs[1] << endl;   
+
+    // Write the elastic DF errors
+    Elastic_DF_Errors->Print("PDF_Plots/PNF_Elastic_DF_Error_Propagation.pdf");
 
     // Calculate the error propagation for the elastic dilution factors
 //TCanvas* PNF_ElasticDF_Stat_Err( vector<PbPt>& AllPbPt, RunPeriod& RP, string Period, string Target, int numVariations, vector<double>& Variations ){
@@ -1095,7 +1112,6 @@ void Calculate_PbPt(){
     cout <<"Sp23Inb errors:\n";
     for(auto v : Variations ) cout << v <<" "<< endl;
 
-    Elastic_DF_Errors->Print("PDF_Plots/PNF_Elastic_DF_Error_Propagation.pdf");
 */
 //TCanvas* Plot_PNF_PbPt( RunPeriod& RP, string Period, string Target ){
 

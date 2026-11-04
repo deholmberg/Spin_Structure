@@ -4,7 +4,7 @@
  *
  * Date Created: 9/18/2026
  *
- * Last Modified: 9/25/2026
+ * Last Modified: 10/28/2026
  *
  * Purpose:
  * This program is used to calculate the dilution factors (DF), packing fractions
@@ -440,24 +440,6 @@ void Test(){
 
     RunPeriod Period; // Holds the information on all RGC runs
 
-
-    Q2_Bin_Bounds = {1.8, 1.923765, 2.056040, 2.197410, 2.348501, 2.509980, 2.682562, 2.867011, 3.064142, 3.274828, 3.5};
-
-    // Calculate the elastic DFs
-    CalculateElasticDF( Period, "Su22",    "NH3", 1 );
-    CalculateElasticDF( Period, "Su22",    "NH3",-1 );
-
-    CalculateElasticDF( Period, "Fa22Neg", "NH3", 1 );
-    CalculateElasticDF( Period, "Fa22Neg", "NH3",-1 );
-
-    CalculateElasticDF( Period, "Fa22Pos", "NH3", 1 );
-    CalculateElasticDF( Period, "Fa22Pos", "NH3",-1 );
-
-    CalculateElasticDF( Period, "Sp23Inb", "NH3", 1 );
-    CalculateElasticDF( Period, "Sp23Inb", "NH3",-1 );
-
-/*
-
     // Draw the summer DF data
     auto DF_Su22  = RunPeriodPlots( Period, 1, 10, "NH3", "Su22", "DF", "", true );
     auto PFc_Su22 = RunPeriodPlots( Period, 1, 10, "NH3", "Su22", "PF", "Cell", true );
@@ -507,8 +489,25 @@ void Test(){
 
     auto DF_Linearity = Linearity_DF_PF();
     DF_Linearity->Print("PDF_Plots/DF_vs_PF_Plots.pdf");
-*/
-//TCanvas* RunPeriodPlots( RunPeriod& RP, int FirstEpoch, int LastEpoch, string Target, string Period, string DForPF, string BathOrCell="Bath" ){
+
+
+    
+    // Calculate the elastic DFs
+    // First, redefine the Q2_Bin_Bounds vector to match Noemie's elastic bins...
+    Q2_Bin_Bounds = {1.8, 1.923765, 2.056040, 2.197410, 2.348501, 2.509980, 2.682562, 2.867011, 3.064142, 3.274828, 3.5};
+
+    CalculateElasticDF( Period, "Su22",    "NH3", 1 );
+    CalculateElasticDF( Period, "Su22",    "NH3",-1 );
+
+    CalculateElasticDF( Period, "Fa22Neg", "NH3", 1 );
+    CalculateElasticDF( Period, "Fa22Neg", "NH3",-1 );
+
+    CalculateElasticDF( Period, "Fa22Pos", "NH3", 1 );
+    CalculateElasticDF( Period, "Fa22Pos", "NH3",-1 );
+
+    CalculateElasticDF( Period, "Sp23Inb", "NH3", 1 );
+    CalculateElasticDF( Period, "Sp23Inb", "NH3",-1 );
+
 
 
 }

@@ -791,7 +791,8 @@ class RunPeriod{
             for(size_t i=0; i<Runs.size(); i++){
                 int run = Runs[i].getRunNumber();
                 if( DataSet == "Su22" && run <= 16772 ) AllGoodRuns.push_back( run );
-                else if( DataSet == "Fa22" && run > 16800 && run < 17450 ) AllGoodRuns.push_back( run );
+                else if( DataSet == "Fa22Neg" && run > 16800 && run <= 17185 ) AllGoodRuns.push_back( run );
+                else if( DataSet == "Fa22Pos" && run > 17185 && run < 17450 ) AllGoodRuns.push_back( run );
                 else if( DataSet == "Sp23" && run > 17450 ) AllGoodRuns.push_back( run );
             }
             if( AllGoodRuns.size() == 0 ) cout << "Couldn't find any good runs\n";

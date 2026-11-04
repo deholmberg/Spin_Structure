@@ -35,8 +35,11 @@ struct RunFCData{
 	}
 
 	// This opens a run file for a given run and target type and sets the relevant info
-	void SetCounts( int run, string targ ){
-	    string filePath = "../Latest_Skims/Text_Files/"+ targ +"_"+ to_string(run) +"_DF_Data.txt";
+	void SetCounts( int run, string targ, bool useQA=true ){
+	    string filePath;
+	    if( useQA ) filePath = "../Latest_Skims/Text_Files/"+ targ +"_"+ to_string(run) +"_DF_Data.txt";
+	    else filePath = "../Latest_Skims/Text_Files_NoQA/"+ targ +"_"+ to_string(run) +"_DF_Data_NoQA.txt";
+
 	    ifstream fin( filePath.c_str() );
 	    if( fin.fail() ){ cout << "ERROR: Couldn't open file "<< filePath <<" to set updated BCA info.\n"; return; }
 
@@ -160,14 +163,14 @@ struct AllFCRunInfo{
 	vector<RunFCData> AllRuns;
 
 	// Using an input vector of runs, sets the FC info
-	void SetRunInfo( RunPeriod& RP, vector<int>& Runs ){
+	void SetRunInfo( RunPeriod& RP, vector<int>& Runs, bool useQA=true ){
 	
 	    for( int run : Runs ){
 	        string Target = RP.getTargetType( run ); 
 		if( Target == "Foil" ) Target = "F";
 		else if( Target == "Empty" ) Target = "ET";
 		RunFCData thisRun;
-		thisRun.SetCounts( run, Target );
+		thisRun.SetCounts( run, Target, useQA );
 		AllRuns.push_back( thisRun );
 	    }
 
@@ -214,7 +217,9 @@ struct AllFCRunInfo{
 		// Check the target with a target pass
 		bool TargetCheck = false;
 		string targ = Run.Target;
-		if( Target == "Unpol" && ( targ == "F" || targ == "ET" || targ == "C" || targ == "CH2" || targ == "CD2" ) ) TargetCheck = true;
+
+		//if( Target == "Unpol" && ( targ == "F" || targ == "ET" || targ == "C" || targ == "CH2" || targ == "CD2" ) ) TargetCheck = true;
+		if( Target == "Unpol" && ( targ == "ET" || targ == "C" || targ == "CH2" || targ == "CD2" ) ) TargetCheck = true; // removed foil targets for now...
 		else TargetCheck = Target == targ; 
 
 		if( TargetCheck && Run.Run >= RunMin && Run.Run <= RunMax && FC_Asyms[0] != 0 ){
@@ -232,8 +237,8 @@ struct AllFCRunInfo{
 	    }
 
 	    TGraphErrors* gr = new TGraphErrors( BCA.size(), BCA.data(), ALL.data(), nullptr, ALL_Err.data() );
-	    string norm = "||";
-	    if( UseNorm ) norm = "norm";
+	    string norm = "LU";
+	    if( UseNorm ) norm = "LU,norm";
 	    gr->SetTitle( string( Period + " A_{"+norm+"} vs. A_{FC} for "+ Target +" Targets; A_{FC}; A_{"+norm+"}" ).c_str() );
 	    gr->SetMarkerStyle(kFullCircle);
 	    gr->SetMarkerColor( Color );
@@ -367,16 +372,39 @@ void Charge_Asymmetry_Check( ){
         vector<int> AllHWPInRuns = RP.getRunsForHWPandTPol( "Su22", "Unpol", 1, 0 );
 	//for(int r : AllHWPInRuns ) cout << r << endl;
 
-	AllFCRunInfo AllData; 
+	AllFCRunInfo AllData, AllDataNoQA; 
 	AllData.SetRunInfo( RP, AllSummerRuns );
+	AllDataNoQA.SetRunInfo( RP, AllSummerRuns, false );
+
+	// Make a plot of the summer carbon data with QA cuts applied
 	auto Plt_C_v1 = AllData.MakeAllFCPlots( "C", "Summer", "EPICS_FCUP" );     Plt_C_v1->Print("PDF_Plots/Summer_Carbon_FCup.pdf(");
 	auto Plt_C_v2 = AllData.MakeAllFCPlots( "C", "Summer", "EPICS_SLM" );      Plt_C_v2->Print("PDF_Plots/Summer_Carbon_FCup.pdf");
 	auto Plt_C_v3 = AllData.MakeAllFCPlots( "C", "Summer", "STRUCK_gated" );   Plt_C_v3->Print("PDF_Plots/Summer_Carbon_FCup.pdf");
 	auto Plt_C_v4 = AllData.MakeAllFCPlots( "C", "Summer", "STRUCK_ungated" ); Plt_C_v4->Print("PDF_Plots/Summer_Carbon_FCup.pdf)");
 
+	// Do the same without QA cuts
+	auto NoQA_C_v1 = AllDataNoQA.MakeAllFCPlots( "C", "Summer", "EPICS_FCUP", "(No QA)" );     NoQA_C_v1->Print("PDF_Plots/Summer_Carbon_FCup_NoQA.pdf(");
+	auto NoQA_C_v2 = AllDataNoQA.MakeAllFCPlots( "C", "Summer", "EPICS_SLM", "(No QA)" );      NoQA_C_v2->Print("PDF_Plots/Summer_Carbon_FCup_NoQA.pdf");
+	auto NoQA_C_v3 = AllDataNoQA.MakeAllFCPlots( "C", "Summer", "STRUCK_gated", "(No QA)" );   NoQA_C_v3->Print("PDF_Plots/Summer_Carbon_FCup_NoQA.pdf");
+	auto NoQA_C_v4 = AllDataNoQA.MakeAllFCPlots( "C", "Summer", "STRUCK_ungated", "(No QA)" ); NoQA_C_v4->Print("PDF_Plots/Summer_Carbon_FCup_NoQA.pdf)");
+
+	// Make a plot of the summer carbon data with QA cuts applied
+	auto Plt_Unpol_v1 = AllData.MakeAllFCPlots( "Unpol", "Summer", "EPICS_FCUP" );     Plt_Unpol_v1->Print("PDF_Plots/Summer_Unpol_FCup.pdf(");
+	auto Plt_Unpol_v2 = AllData.MakeAllFCPlots( "Unpol", "Summer", "EPICS_SLM" );      Plt_Unpol_v2->Print("PDF_Plots/Summer_Unpol_FCup.pdf");
+	auto Plt_Unpol_v3 = AllData.MakeAllFCPlots( "Unpol", "Summer", "STRUCK_gated" );   Plt_Unpol_v3->Print("PDF_Plots/Summer_Unpol_FCup.pdf");
+	auto Plt_Unpol_v4 = AllData.MakeAllFCPlots( "Unpol", "Summer", "STRUCK_ungated" ); Plt_Unpol_v4->Print("PDF_Plots/Summer_Unpol_FCup.pdf)");
+
+	// Do the same without QA cuts
+	auto NoQA_Unpol_v1 = AllDataNoQA.MakeAllFCPlots( "Unpol", "Summer", "EPICS_FCUP", "(No QA)" );     NoQA_Unpol_v1->Print("PDF_Plots/Summer_Unpol_FCup_NoQA.pdf(");
+	auto NoQA_Unpol_v2 = AllDataNoQA.MakeAllFCPlots( "Unpol", "Summer", "EPICS_SLM", "(No QA)" );      NoQA_Unpol_v2->Print("PDF_Plots/Summer_Unpol_FCup_NoQA.pdf");
+	auto NoQA_Unpol_v3 = AllDataNoQA.MakeAllFCPlots( "Unpol", "Summer", "STRUCK_gated", "(No QA)" );   NoQA_Unpol_v3->Print("PDF_Plots/Summer_Unpol_FCup_NoQA.pdf");
+	auto NoQA_Unpol_v4 = AllDataNoQA.MakeAllFCPlots( "Unpol", "Summer", "STRUCK_ungated", "(No QA)" ); NoQA_Unpol_v4->Print("PDF_Plots/Summer_Unpol_FCup_NoQA.pdf)");
+
+
 	// Loop over all HWP and Tpol configs for NH3
 	vector<int> Target_Pols = {-1,1};
 	vector<int> HWP_Status  = { 0,1};
+/*
 	// NH3 Runs
 	for(size_t i=0; i<HWP_Status.size(); i++){
 	    for(size_t j=0; j<Target_Pols.size(); j++){
@@ -426,7 +454,7 @@ void Charge_Asymmetry_Check( ){
 		Plt_ND3_v4->Print( string("PDF_Plots/Summer_ND3_FCup_HWP"+to_string( HWP_Status[i] )+"_Tpol"+to_string( Target_Pols[j] )+".pdf)").c_str() );
 	    }
 	}
-
+*/
 
 
 	// Also generate plots for the NH3 runs of each targer polarization and HWP configuration...

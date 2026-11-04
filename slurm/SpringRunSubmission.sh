@@ -32,6 +32,6 @@ for run in "${runs[@]}"
 do
     echo $PATH1 $PATH2 $run $PID $FILEEXT $THISDIR
 
-    sbatch ${THISDIR}/GetPairTree.slurm $PATH1 $PATH2 $run $PID $FILEEXT $THISDIR
+    sbatch ${THISDIR}/GetPairTree.slurm $PATH1 $PATH2 $run $PID $FILEEXT
 
 done
