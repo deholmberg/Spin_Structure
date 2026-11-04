@@ -69,7 +69,7 @@ vcpkg_installed/
 
 # test output & cache
 Testing/
-Noemies_Elastic_Analysis/
+Noemies_Elastic_Analysis/backups/
 Latest_Skims/ROOT_Files/
 Latest_Skims/Text_Files/
 Latest_Skims/ROOT_Files_NoQA/

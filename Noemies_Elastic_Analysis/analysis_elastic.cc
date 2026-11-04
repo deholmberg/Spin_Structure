@@ -1,0 +1,575 @@
+#include "Particle.h"
+#include "Particle.cpp"
+#include "hipo4/reader.h"
+#include "QADB.h"
+
+// Add in my header files
+#include "../Header_Files/Binning_Classes.h"
+
+using namespace QA;
+
+QADB * qa = new QADB("latest");//run_min,run_max);
+// decide which runs for which you care about the 'Misc' defect bit or not
+std::vector<int> allow_these_misc_assignments = {
+  16850,16851,16852,16853,16856,16857,16898,16899,16901,16908,16945,17179,17180,17181,17182,
+  17183,16047,16049,17230,17252,17272,17484,17491,16096,16098,16100,16101,16102,16103,16105,
+  16106,16107,16262,16263,16273,16276,16734,17069,17179,17180,17181,17182,17183,17188,17189,
+  17191,16733,16736,17735
+  //these for now are runs for which the rich was not working or lumi scans or raster scans or different trigger files
+  //Runs to be checked later because they may be ok: 17506,17507,17796,17797 which have weird tpol stuff, need to look at elastics
+};
+
+//int analysis_elastic(int run_number, string target_type)
+void analysis_elastic()
+{  
+
+  int run_number; string target_type;
+  //cin >> run_number >> target_type;
+  cin >> run_number;
+
+  RunPeriod RP;
+  target_type = RP.getTargetType( run_number );
+  if( target_type == "Foil" or target_type == "Empty" or target_type == "F" ) target_type = "ET";
+
+  qa->CheckForDefect("TotalOutlier",true);
+  qa->CheckForDefect("TerminalOutlier",true);
+  qa->CheckForDefect("MarginalOutlier",true);
+  qa->CheckForDefect("SectorLoss",true);
+  qa->CheckForDefect("LowLiveTime",true);
+  qa->CheckForDefect("Misc",true);
+  qa->CheckForDefect("LossFT",true);
+  qa->CheckForDefect("TotalOutlierFT",true);
+  qa->CheckForDefect("TerminalOutlierFT",true);
+  qa->CheckForDefect("MarginalOutlierFT",true);
+
+  cout <<"QADB defects set" << endl;
+  for(auto run : allow_these_misc_assignments) {cout << run << endl; qa->AllowMiscBit(run);}
+  
+  //Input file
+  clas12root::HipoChain hipochain;
+  TChain *chain = new TChain("", "");
+  string filename = "/cache/clas12/rg-c/production/summer22/pass1/10.5gev/"+target_type+"/dst/train/gmn/gmn_0"+ to_string(run_number) +".hipo"; 
+  if(run_number>=16843 && run_number<=17408) filename = "/cache/clas12/rg-c/production/fall22/pass1/"+target_type+"/dst/train/gmn/gmn_0"+ to_string(run_number) +".hipo";
+  if(run_number>=17477) filename = "/cache/clas12/rg-c/production/spring23/pass1/"+target_type+"/dst/train/gmn/gmn_0"+ to_string(run_number) +".hipo";
+  ifstream my_file(filename);
+  if (my_file)
+    {
+      chain->AddFile(filename.c_str());
+      hipochain.Add(filename.c_str());
+    } 
+  else 
+    {
+      cerr << "file " + filename + " does not exist" << endl;
+      return;
+    }
+  
+  //Output file                                                                                                                           
+  //TFile *outfile = new TFile(std::string("/w/hallb-scshelf2102/clas12/holmberg/PairSymBkg/ElasticTreeNoemie/analysis_elastic_"+ to_string(run_number) +  ".root").c_str(), "RECREATE"); 
+  TFile *outfile = new TFile(std::string("/volatile/clas12/holmberg/ElasticData/analysis_elastic_"+ to_string(run_number) +  ".root").c_str(), "RECREATE");
+  //Define hipo variables
+  hipo::reader reader;
+  hipo::dictionary factory;
+  hipo::structure particles;
+  hipo::event event;
+  
+  //Output tree
+  TTree *tree = new TTree("Elastic", "Elastic");                                                                                                  
+  TTree *tree_scaler = new TTree("Scaler info", "Scaler info");
+  int RunNumber, Helicity, Event_ID;
+  double El_px, El_py, El_pz;
+  double El_E, El_P;
+  double El_Theta, El_Phi;
+  double El_vx, El_vy,El_vz;
+  double El_status, El_chi2pid, El_beta;
+  double El_sampling, El_edep_pcal, El_edep_ecin, El_edep_ecout;
+  bool El_fiducial=false, El_fiducial1=false, El_fiducial2=false, El_fiducial3=false;
+  int El_sector_pcal;
+  double Nuc_px, Nuc_py, Nuc_pz;
+  double Nuc_E, Nuc_P;
+  double Nuc_Theta, Nuc_Phi;
+  double Nuc_vx, Nuc_vy,Nuc_vz;
+  double Nuc_status, Nuc_chi2pid, Nuc_beta;
+  bool Nuc_fiducial=false;
+  double mm2_eN_N, Q2, delta_Q2, W2, Emiss,p_perp,p_long;
+  double pe_calc,Ee_calc,Ee_calc_purelastic, pp_calc, Q2_calc, dPhi;
+  double delta_pe, delta_pp, mm2_total;
+  double Ath;
+  double FCup_hel_p, FCup_hel_n, FCup_run;
+  double FCup_p_qa, FCup_n_qa, FCup_z_qa, FCup_qa;
+  double nucleon_mass = 938.272081/1000.;
+  int qadb_is_ok;
+  // Variables to store QADB info in the particle tree
+  int qadb_mask_s1 = 0; int qadb_mask_s2 = 0; int qadb_mask_s3 = 0;
+  int qadb_mask_s4 = 0; int qadb_mask_s5 = 0; int qadb_mask_s6 = 0;
+
+  // Tracks total events
+  int total_events = 0;
+
+  tree->Branch("RunNumber", &RunNumber);
+  tree_scaler->Branch("RunNumber", &RunNumber);
+  tree->Branch("Helicity", &Helicity);
+  tree->Branch("EventID", &Event_ID);
+  tree->Branch("El_px", &El_px);
+  tree->Branch("El_py", &El_py);
+  tree->Branch("El_pz", &El_pz);
+  tree->Branch("El_E", &El_E);
+  tree->Branch("El_P", &El_P);
+  tree->Branch("El_Theta", &El_Theta);
+  tree->Branch("El_Phi", &El_Phi);
+  tree->Branch("El_vx", &El_vx);
+  tree->Branch("El_vy", &El_vy);
+  tree->Branch("El_vz", &El_vz);
+  tree->Branch("El_status", &El_status);
+  tree->Branch("El_chi2pid", &El_chi2pid);
+  tree->Branch("El_beta", &El_beta);
+  tree->Branch("El_fiducial", &El_fiducial);
+  tree->Branch("El_fiducial1", &El_fiducial1);
+  tree->Branch("El_fiducial2", &El_fiducial2);
+  tree->Branch("El_fiducial3", &El_fiducial3);
+  tree->Branch("El_sector_pcal", &El_sector_pcal);
+  tree->Branch("El_edep_pcal",&El_edep_pcal);
+  tree->Branch("El_edep_ecin",&El_edep_ecin);
+  tree->Branch("El_edep_ecout",&El_edep_ecout);
+  tree->Branch("El_sampling",&El_sampling);
+  tree->Branch("Nuc_px", &Nuc_px);
+  tree->Branch("Nuc_py", &Nuc_py);
+  tree->Branch("Nuc_pz", &Nuc_pz);
+  tree->Branch("Nuc_E", &Nuc_E);
+  tree->Branch("Nuc_P", &Nuc_P);
+  tree->Branch("Nuc_Theta", &Nuc_Theta);
+  tree->Branch("Nuc_Phi", &Nuc_Phi);
+  tree->Branch("Nuc_vx", &Nuc_vx);
+  tree->Branch("Nuc_vy", &Nuc_vy);
+  tree->Branch("Nuc_vz", &Nuc_vz);
+  tree->Branch("Nuc_status", &Nuc_status);
+  tree->Branch("Nuc_chi2pid", &Nuc_chi2pid);
+  tree->Branch("Nuc_beta", &Nuc_beta);
+  tree->Branch("Nuc_fiducial", &Nuc_fiducial);
+  tree->Branch("mm2_eN_N", &mm2_eN_N);
+  tree->Branch("mm2_total", &mm2_total);
+  tree->Branch("Q2", &Q2);
+  tree->Branch("delta_Q2", &delta_Q2);
+  tree->Branch("W2", &W2); 
+  tree->Branch("Emiss", &Emiss);
+  tree->Branch("p_perp", &p_perp);
+  tree->Branch("p_long", &p_long); 
+  tree->Branch("pe_calc", &pe_calc);
+  tree->Branch("Ee_calc", &Ee_calc);
+  tree->Branch("Ee_calc_purelastic", &Ee_calc_purelastic);
+  tree->Branch("pp_calc", &pp_calc);
+  tree->Branch("Q2_calc", &Q2_calc);
+  tree->Branch("dPhi", &dPhi);
+  tree->Branch("delta_pe", &delta_pe);
+  tree->Branch("delta_pp", &delta_pp);
+  tree->Branch("Ath", &Ath);
+  tree->Branch("qadb_is_ok", &qadb_is_ok);
+
+  // Derek's addition: create branches on the tree to store all of the QADB variables
+  tree->Branch("qadb_mask_s1", &qadb_mask_s1, "qadb_mask_s1/I");
+  tree->Branch("qadb_mask_s2", &qadb_mask_s2, "qadb_mask_s2/I");
+  tree->Branch("qadb_mask_s3", &qadb_mask_s3, "qadb_mask_s3/I");
+  tree->Branch("qadb_mask_s4", &qadb_mask_s4, "qadb_mask_s4/I");
+  tree->Branch("qadb_mask_s5", &qadb_mask_s5, "qadb_mask_s5/I");
+  tree->Branch("qadb_mask_s6", &qadb_mask_s6, "qadb_mask_s6/I");
+
+  tree_scaler->Branch("FCup_hel_p", &FCup_hel_p);
+  tree_scaler->Branch("FCup_hel_n", &FCup_hel_n);
+  tree_scaler->Branch("FCup_run", &FCup_run);
+  tree_scaler->Branch("FCup_p_qa", &FCup_p_qa);
+  tree_scaler->Branch("FCup_z_qa", &FCup_z_qa);
+  tree_scaler->Branch("FCup_n_qa", &FCup_n_qa);
+  tree_scaler->Branch("FCup_qa", &FCup_qa);
+  
+  //Incident electron beam                                                                                                                                                    
+  double Ebeam = 0; // Allowed to be zero for error testing purposes
+  if( run_number <= 17065 ) Ebeam = beam_energy1;
+  else if( run_number >= 17067 && run_number <= 17704 ) Ebeam = beam_energy2;
+  else if( run_number >= 17720 ) Ebeam = beam_energy3;
+
+  TVector3 beam_energy(0,0,Ebeam);
+  PARTICLE electron_beam(beam_energy, 11);
+  electron_beam.construct_all_properties();
+  
+  //Proton target                                                                                                                                                                                        
+  TVector3 target(0,0,0);
+  PARTICLE proton_target(target, 2212);
+  proton_target.construct_all_properties();
+
+  //Reconstructed particles
+  vector<PARTICLE> electrons;
+  vector<PARTICLE> protons;
+  
+  //Handling hipo files
+  reader.open(filename.c_str());
+  
+  reader.readDictionary(factory);
+  hipo::bank CONF(factory.getSchema("RUN::config"));
+  hipo::bank HEL(factory.getSchema("REC::Event"));
+  hipo::bank PART(factory.getSchema("REC::Particle"));
+  hipo::bank HEL_SCALER(factory.getSchema("HEL::scaler"));
+  hipo::bank RUN_SCALER(factory.getSchema("RUN::scaler"));
+  hipo::bank CALO(factory.getSchema("REC::Calorimeter"));
+  hipo::bank TRAJ(factory.getSchema("REC::Traj"));
+  hipo::bank TRACK(factory.getSchema("REC::Track"));
+
+  //FCup counts from scalers
+  FCup_hel_n = 0;
+  FCup_hel_p = 0;      
+  FCup_run = 0;
+
+  //Start loop on events
+  while (reader.next() == true)
+    {
+      
+      //Get hipo info
+      reader.read(event);  
+      event.getStructure(PART);
+      event.getStructure(HEL);
+      event.getStructure(CONF);
+      event.getStructure(HEL_SCALER);
+      event.getStructure(RUN_SCALER);
+      event.getStructure(TRAJ);
+      event.getStructure(CALO);
+      event.getStructure(TRACK);
+      //Event info                                                                                                                                                                                   
+      RunNumber = CONF.getInt("run", 0);
+      int evnum = CONF.getInt("event", 0);
+      Helicity = HEL.getInt("helicity", 0);
+
+      // Derek's addition: track the QADB error bits for each sector and write them to a branch
+      // like I have in my own code
+      vector<int> QADB_Masks = {0,0,0,0,0,0};
+      qadb_mask_s1 = -1;  qadb_mask_s2 = -1;  qadb_mask_s3 = -1;
+      qadb_mask_s4 = -1;  qadb_mask_s5 = -1;  qadb_mask_s6 = -1;
+      // Query the QADB run and event number and grab the "OR" of all sectors' error bits
+      if( qa->Query( RunNumber, evnum ) ) for( int s=1; s<=6; s++ ) QADB_Masks[s-1] = qa->GetDefect( s );
+
+      //QADB
+      qadb_is_ok=1;
+      if(RunNumber==0 || evnum==0) continue;
+      if(!qa->Pass(RunNumber,evnum)) {qadb_is_ok=0;}
+      else {qa->AccumulateCharge(); qa->AccumulateChargeHL();}
+      Helicity *= qa->CorrectHelicitySign(RunNumber, evnum);      
+      
+      //Scalers information
+      for(int row=0; row<HEL_SCALER.getRows(); row++)
+	{
+	  int hel = HEL_SCALER.getByte("helicity",row);
+	  //WRONG HWP RUNS. THIS WILL NEED TO BE REMOVED IF THE RUNS ARE RECOOKED.
+	  if(RunNumber == 17555 || RunNumber == 17735) hel = -hel;
+	  if(hel == -1) FCup_hel_n+=HEL_SCALER.getFloat("fcupgated",row);
+	  if(hel == 1) FCup_hel_p+=HEL_SCALER.getFloat("fcupgated",row);
+	}
+
+      if(RUN_SCALER.getRows()>0)
+	{
+	  float entry = RUN_SCALER.getFloat("fcupgated",0);
+	  if(entry>FCup_run) FCup_run=entry;
+	  //FCup_run=RUN_SCALER.getFloat("fcupgated",0);
+	}
+      
+      //Number of particles in each event
+      int size = PART.getRows();	  
+      
+      //Start loop on REC particles
+      for (int i = 0; i < PART.getRows(); i++)
+	{
+	  //Get particle info
+	  int    pid = PART.getInt("pid", i);
+	  if (pid!= 11 && pid!=2212) continue;
+	  double px  = PART.getFloat("px", i);
+	  double py  = PART.getFloat("py", i);
+	  double pz  = PART.getFloat("pz", i);
+	  TVector3 momentum(px,py,pz);
+
+
+	  double vx  = PART.getFloat("vx", i);
+	  double vy  = PART.getFloat("vy", i);
+	  double vz  = PART.getFloat("vz", i);
+	  TVector3 position(vx,vy,vz);
+	  int status = PART.getInt("status", i);
+	  double chi2pid = PART.getFloat("chi2pid", i);
+	  int charge = PART.getInt("charge", i);      	    
+	  double beta=PART.getFloat("beta",i);
+	  
+	  //Electron
+	  if(pid==11)
+	    {
+	      // Apply the momentum correction...
+	      // First, calculate an uncorrected theta
+	      // This is inefficient, but get the sector of the DC hit
+	      int sectorDC = 0;
+	      
+              for(int i_track = 0; i_track < TRACK.getRows(); i_track++){
+		  int pindex = TRACK.getInt("pindex", i_track);
+		  //if(pindex!=i) continue; //looking at current particle
+		  int detector = TRACK.getInt("detector" , i_track);
+	  	  //if(detector!=6) continue;//LOOKING AT DRIFT CHAMBERS
+		  if( pindex == i && detector == 6 ){
+	  	     sectorDC = TRACK.getInt("sector", i_track);
+	   	     //i_track=TRACK.getRows()-1; // Kills loop
+		  }
+	      }
+	      
+	      double uncorrTheta = 0;
+	      double pt = sqrt( px*px + py*py + pz*pz );
+	      if( pt > 0 ) uncorrTheta = (180.0/M_PI)*acos(pz/pt);
+	      double PX = MomentumCorrection( px, uncorrTheta, sectorDC, RunNumber );
+	      double PY = MomentumCorrection( py, uncorrTheta, sectorDC, RunNumber );
+	      double PZ = MomentumCorrection( pz, uncorrTheta, sectorDC, RunNumber );
+	      // Now, all further calculations with the Vector classes will have the corrected momentum for the electron
+	      TVector3 corrMomentum(PX,PY,PZ);
+
+	      PARTICLE electron(corrMomentum, position, pid, chi2pid, status, charge);
+	      electron.construct_all_properties();
+	      
+	      TLorentzVector virtual_ph = electron_beam.LorentzVector- electron.LorentzVector;
+	      Q2 = - virtual_ph.Mag2();
+	      W2 = (proton_target.LorentzVector + virtual_ph).Mag2();
+	      mm2_eN_N = (electron_beam.LorentzVector + proton_target.LorentzVector - electron.LorentzVector).M2();
+	      El_px = PX;
+	      El_py = PY;
+	      El_pz = PZ;
+	      El_E = electron.energy;
+	      El_P = electron.getmomentum().Mag();
+	      El_Theta = electron.theta;
+	      El_Phi = electron.phi;
+	      El_vx = vx;
+	      El_vy = vy;
+	      El_vz = vz;
+	      El_status = status;
+	      El_chi2pid = chi2pid;
+	      El_beta = beta;
+	      
+	      pe_calc = Ebeam / (1 + (Ebeam/nucleon_mass)*(1-cos(El_Theta*TMath::Pi()/180.)));
+	      Ee_calc_purelastic = Ebeam / (1 + 2*(Ebeam/nucleon_mass) * pow(sin((El_Theta*TMath::Pi()/180.)/2.),2));
+	      pp_calc = pe_calc * TMath::Sqrt(pow((1+Ebeam/nucleon_mass),2)*pow((1-cos(El_Theta*TMath::Pi()/180.)),2)+pow(sin(El_Theta*TMath::Pi()/180.),2));
+	      Q2_calc = 4*Ebeam*El_E*pow(sin(El_Theta*TMath::Pi()/180.)/2.,2);		  
+	      
+	      delta_pe = pe_calc - El_P;
+	      delta_Q2 = Q2_calc - Q2;
+
+	      double sampling=0, edep_pcal=0, edep_ecin=0, edep_ecout=0, edep=0;
+	      int sector=0;
+	      bool fiducial=true, fiducial1=false, fiducial2=false, fiducial3=false;
+
+	      double dc_edge1, dc_edge2, dc_edge3;
+	      
+	      //fiducial DC                         
+	      for (int i_traj = 0; i_traj < TRAJ.getRows(); i_traj++)
+		{
+		  int pindex = TRAJ.getInt("pindex", i_traj);
+		  if(pindex!=i) continue; //looking at current particle
+		  int detector = TRAJ.getInt("detector" , i_traj);
+		  if(detector!=6) continue;//LOOKING AT DRIFT CHAMBERS
+		  int layer = TRAJ.getInt("layer" , i_traj);
+		  double edge = TRAJ.getFloat("edge" ,i_traj);
+		  
+		  if(layer==6) dc_edge1 = edge;
+		  else if(layer==18) dc_edge2 = edge;
+		  else if(layer==36) dc_edge3 = edge;
+		  else cerr << "Invalid DC layer : " << layer << endl;	      
+		}
+
+	      bool dc_fiducial = false;
+	      if(dc_edge1 > 5 && dc_edge2 > 5 && dc_edge3 > 10) dc_fiducial = true;
+	      
+	      // Initialize variables for storing the index and values of the cal bank 3
+	      float lv_1 = 0.0, lw_1 = 0.0, lu_1 = 0.0;
+	      float lv_4 = 0.0, lw_4 = 0.0, lu_4 = 0.0;
+	      float lv_7 = 0.0, lw_7 = 0.0, lu_7 = 0.0;
+	      
+	      for (int i_calo = 0; i_calo < CALO.getRows(); i_calo++)
+		{
+		  if(CALO.getInt("pindex", i_calo)!=i) continue;//Only current particle
+		  if(CALO.getInt("detector", i_calo)!=7) continue;//ECAL
+		  double edep_calo = CALO.getFloat("energy", i_calo);
+		  int sector = CALO.getInt("sector", i_calo);
+		  
+		  if(CALO.getInt("layer", i_calo)==4)//ECIN
+		    {
+		      lv_4 = CALO.getFloat("lv", i_calo);
+		      lw_4 = CALO.getFloat("lw", i_calo);
+		      lu_4 = CALO.getFloat("lu", i_calo);
+		      edep_ecin = edep_calo;
+		      edep+=edep_calo;
+		    }                                                                                                  
+		  if(CALO.getInt("layer", i_calo)==7)//ECOUT
+		    {
+		      lv_7 = CALO.getFloat("lv", i_calo);
+		      lw_7 = CALO.getFloat("lw", i_calo);
+		      lu_7 = CALO.getFloat("lu", i_calo);
+		      edep_ecout = edep_calo;
+		      edep+=edep_calo;
+		    }
+		  if(CALO.getInt("layer", i_calo)==1)
+		    {//PCAL
+		      lv_1 = CALO.getFloat("lv", i_calo);
+                      lw_1 = CALO.getFloat("lw", i_calo);
+                      lu_1 = CALO.getFloat("lu", i_calo);
+		      edep_pcal = edep_calo;
+		      sector = CALO.getInt("sector", i_calo);
+		      edep+=edep_calo;
+		      if(CALO.getFloat("lv", i_calo)<8 || CALO.getFloat("lw", i_calo)<8) fiducial=false;
+		    }
+		}
+
+	      bool bad_pcal1 = (lw_1 < 9 || lv_1 < 9 || lu_1 < 14);
+	      bool bad_pcal2 = (lw_1 < 14 || lv_1 < 14 || lu_1 < 29);
+	      bool bad_pcal3 = ((lw_1 < 19 || lv_1 < 19)||( lu_1 < 39 || lu_1 > 400));
+	      bool bad_ecin_S1 = (sector == 1)&&(lv_4 > 72 && lv_4 < 94);
+	      bool bad_ecout_S2 = (sector ==2)&&(lw_7 > 68 && lw_7 < 84);
+	      bool bad_ecout_S5 = (sector == 5)&&(lu_7 > 200 && lu_7 < 220);
+	      bool bad_ec = bad_ecin_S1 || bad_ecout_S2 || bad_ecout_S5;
+	      if(dc_fiducial && !bad_pcal1) fiducial1 = true;
+	      if(dc_fiducial && !bad_pcal2 && !bad_ec) fiducial2 = true;
+	      if(dc_fiducial && !bad_pcal3 && !bad_ec) fiducial3 = true;
+	      sampling = edep/momentum.Mag();
+	      El_edep_pcal = edep_pcal;
+	      El_edep_ecin = edep_ecin;
+	      El_edep_ecout = edep_ecout;
+	      El_sampling=sampling;
+	      El_fiducial=fiducial;
+	      El_fiducial1=fiducial1;
+	      El_fiducial2=fiducial2;
+	      El_fiducial3=fiducial3;
+	      El_sector_pcal=sector;
+	      electrons.push_back(electron);
+	    }
+	  
+	  //Proton, uncorrected momentum is used here
+	  if(pid==2212)
+	    {
+	      PARTICLE proton(momentum, position, pid, chi2pid, status, charge);
+	      proton.construct_all_properties();
+	      Nuc_px = px;
+	      Nuc_py = py;
+	      Nuc_pz = pz;
+	      Nuc_E = proton.energy;
+	      Nuc_P = proton.getmomentum().Mag();
+	      Nuc_Theta = proton.theta;
+	      Nuc_Phi = proton.phi;
+	      Nuc_vx = vx;
+	      Nuc_vy = vy;
+	      Nuc_vz = vz;
+	      Nuc_status = status;
+	      Nuc_chi2pid = chi2pid;
+	      Nuc_beta=beta;
+
+	      bool fiducial=false;
+	      double cvt_edge1, cvt_edge2, cvt_edge3, cvt_edge5, cvt_edge7, cvt_edge12;
+	      //fiducial CVT
+              for (int i_traj = 0; i_traj < TRAJ.getRows(); i_traj++)
+                {
+                  int pindex = TRAJ.getInt("pindex", i_traj);
+                  if(pindex!=i) continue; //looking at current particle
+                  int detector = TRAJ.getInt("detector" , i_traj);
+		  if(detector!=5) continue;//LOOKING AT CVT
+		  int layer = TRAJ.getInt("layer" , i_traj);
+                  double edge = TRAJ.getFloat("edge" ,i_traj);
+		  if(layer==1) cvt_edge1=edge;
+		  else if(layer==3) cvt_edge3=edge;
+		  else if(layer==5) cvt_edge5=edge;
+		  else if(layer==7) cvt_edge7=edge;
+		  else if(layer==12) cvt_edge12=edge;
+		}
+                
+              if(cvt_edge1 > 0 && cvt_edge3 > 0 && cvt_edge5 > 0 && cvt_edge7 > -2 && cvt_edge12 > -5) fiducial = true;
+	      Nuc_fiducial = fiducial;
+	      protons.push_back(proton);
+	    }
+	}//END LOOP ON PARTICLES
+      
+      if(protons.size() == 1 && electrons.size()==1)
+	{
+
+	  if( total_events % 1000 == 0 ) cout <<"Processed "<< total_events <<" events.\n";
+
+	  Ee_calc = nucleon_mass*(1/(tan(electrons[0].theta*(TMath::Pi()/180.)/2)*tan(protons[0].theta*TMath::Pi()/180.))-1.);
+	  dPhi = TMath::Abs(electrons[0].phi - protons[0].phi);
+	  if(!(dPhi>170 && dPhi<190)) {electrons.clear(); protons.clear(); continue;}
+	  delta_pp = pp_calc - protons[0].getmomentum().Mag();   
+	  Emiss = electron_beam.energy + proton_target.energy - electrons[0].energy - protons[0].energy;
+	  mm2_total = (electron_beam.LorentzVector + proton_target.LorentzVector - electrons[0].LorentzVector - protons[0].LorentzVector).M2();
+	  p_long = electron_beam.getmomentum().z() + proton_target.getmomentum().z() - electrons[0].getmomentum().z()- protons[0].getmomentum().z();
+	  double missing_px = electron_beam.getmomentum().x() + proton_target.getmomentum().x() - electrons[0].getmomentum().x()- protons[0].getmomentum().x();
+	  double missing_py = electron_beam.getmomentum().y() + proton_target.getmomentum().y() - electrons[0].getmomentum().y()- protons[0].getmomentum().y();
+	  p_perp = sqrt(missing_px*missing_px + missing_py*missing_py);
+	  
+	  double tau = Q2/(4*nucleon_mass*nucleon_mass);
+	  double Ge = (1+3.439*tau-1.602*pow(tau,2)+0.068*pow(tau,3))/(1+15.055*tau+48.061*pow(tau,2)+99.304*pow(tau,3)+0.012*pow(tau,4)+8.65*pow(tau,5));
+	  double Gm = 2.7928473*(1-1.465*tau+1.26*pow(tau,2)+0.262*pow(tau,3))/(1+9.627*tau+11.179*pow(tau,4)+13.245*pow(tau,5));
+	  double G = Gm/Ge;
+	  double ME = nucleon_mass/electron_beam.energy;
+	  double tanterm = (1+tau)*pow(tan(El_Theta*M_PI/(180*2.)),2);
+	  double num_Ath = 2*tau*G*(ME + G*(tau*ME + tanterm));
+	  double epsilon = 1./(1+2*tanterm);
+	  double den_Ath = 1+G*G*tau/epsilon;
+	  Ath = num_Ath/den_Ath;
+	  // Derek's addition for the QADB error bits...
+	  qadb_mask_s1 = QADB_Masks[0];
+	  qadb_mask_s2 = QADB_Masks[1];
+	  qadb_mask_s3 = QADB_Masks[2];
+	  qadb_mask_s4 = QADB_Masks[3];
+	  qadb_mask_s5 = QADB_Masks[4];
+	  qadb_mask_s6 = QADB_Masks[5];
+
+	  tree->Fill();
+	  total_events++;
+	}
+      
+      electrons.clear();
+      protons.clear();
+      
+    }//END LOOP ON EVENTS
+
+  FCup_qa = qa->GetAccumulatedCharge();
+  FCup_p_qa = qa->GetAccumulatedChargeHL(1);
+  FCup_n_qa = qa->GetAccumulatedChargeHL(-1);
+  FCup_z_qa = qa->GetAccumulatedChargeHL(0);
+  
+  tree_scaler->Fill();
+  
+  // Write the original trees to the first file
+  outfile->cd();
+  tree->Write();               // Write main tree
+  tree_scaler->Write();        // Write scaler tree to outfile
+  
+  // Create the fiducial tree
+  TFile *fiducial_outfile = new TFile(std::string("/volatile/clas12/holmberg/ElasticData/fiducial_correctedP_elastic_"+ to_string(run_number) +  ".root").c_str(), "RECREATE");
+  fiducial_outfile->cd();
+  TTree *fiducial_tree = tree->CloneTree(0);
+  
+  // Fill fiducial tree with filtered entries
+  for (Long64_t i = 0; i < tree->GetEntries(); i++) {
+    tree->GetEntry(i);
+    if (El_fiducial1 && Nuc_fiducial)
+      fiducial_tree->Fill();
+  }
+  fiducial_tree->Write();
+  
+  // Clone and write tree_scaler to second file
+  TTree *fiducial_scaler = tree_scaler->CloneTree();  // Clone full scaler tree
+  fiducial_scaler->Write();                           // Safe to write this one
+
+  // Create the precut tree
+  TFile *cut_outfile = new TFile(std::string("/volatile/clas12/holmberg/ElasticData/precut_correctedP_elastic_"+ to_string(run_number) +  ".root").c_str(), "RECREATE");
+  cut_outfile->cd();
+  TTree *cut_tree = tree->CloneTree(0);
+  
+  for (Long64_t i = 0; i < tree->GetEntries(); i++) {
+    tree->GetEntry(i);
+    if (W2<2 && W2>0)
+      cut_tree->Fill();
+  }
+  cut_tree->Write();
+  TTree *cut_scaler = tree_scaler->CloneTree();
+  cut_scaler->Write();
+  
+  // Close files
+  outfile->Close();
+  fiducial_outfile->Close();
+  cut_outfile->Close();
+
+  //return 1;
+}
