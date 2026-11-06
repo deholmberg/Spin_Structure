@@ -15,6 +15,12 @@ struct RunFCData{
 	double Fm_g  = 0; // FC -1 charge (gated)
 	double ReadP = 0; // Number of helicity +1 readouts of HEL::scaler from the updated list
 	double ReadN = 0; // Number of helicity -1 readouts of HEL::scaler from the updated list
+	double BT          = 0 ; // Beam-target polarization (unnormalized to FC charge)
+	double BT_Err      = 0; // Error in unnormalized BT
+	double BT_Norm     = 0; // Beam-target polarization (normalized to FC charge)
+	double BT_Norm_Err = 0; // Error in the normalized BT
+	double BT_NMR      = 0; // Target polarization ONLY (no beam polarization) from the NMR measurements
+	double BT_NMR_Err  = 0; // Error in the NMR measurement
 
 	// This holds the updated FC asymmetries
 	double BCA_EPICS_FCUP     = 0; // BCA from the Fcup EPICS
@@ -32,6 +38,12 @@ struct RunFCData{
 		BCA_EPICS_FCUP = epicsFC; BCA_EPICS_SLM = epicsSLM;
 		BCA_STRUCK_gated = gStruck; BCA_STRUCK_ungated = ugStruck;
 		ReadP = countsP; ReadN = countsN;
+	}
+
+	void SetBT( double bt, double bterr, double btnorm, double btnormerr, double nmr, double nmrerr ){
+		BT = bt; BT_Err = bterr;
+		BT_Norm = btnorm; BT_Norm_Err = btnormerr;
+		BT_NMR = nmr; BT_NMR_Err = nmrerr;
 	}
 
 	// This opens a run file for a given run and target type and sets the relevant info
@@ -98,13 +110,34 @@ struct RunFCData{
 		return FC_Asyms;
 	}
 
-	vector<double> RawAsymmetry() const{
+	vector<double> RawAsymmetry( string useBT="NO" ) const{
 
 		vector<double> Asyms = {0,0};
 
 		if( Np + Nm > 0 ){
+		    //Asyms[0] = 1.0*(Np - Nm)/(Np + Nm);
+		    //Asyms[1] = (2.0/pow(1.0*(Np+Nm),2)) * sqrt( 1.0*Nm*Nm*Np + 1.0*Np*Np*Nm );
+		    
+		    if( useBT == "NO" ){
 			Asyms[0] = 1.0*(Np - Nm)/(Np + Nm);
 			Asyms[1] = (2.0/pow(1.0*(Np+Nm),2)) * sqrt( 1.0*Nm*Nm*Np + 1.0*Np*Np*Nm );
+		    }
+		    else{
+			double thisBT    = 0;
+			double thisBTerr = 0;
+			if( useBT == "Raw" ){ thisBT = BT; thisBTerr = BT_Err; }
+			else if( useBT == "Norm" ){ thisBT = BT_Norm; thisBTerr = BT_Norm_Err; }
+			else if( useBT == "NMR"  ){ thisBT = BT_NMR; thisBTerr = BT_NMR_Err; }
+
+			if( thisBT != 0 && thisBTerr > 0 ){
+			    Asyms[0] = 1.0*(Np - Nm)/( (Np + Nm) * thisBT );
+			    // Calculate the error
+			    double Araw = (Np - Nm)/(Np + Nm);
+			    double denom = pow( (Np+Nm), 4 ) * thisBT * thisBT;
+			    Asyms[1] = sqrt( (4*Nm*Nm*Np)/denom + (4*Np*Np*Nm)/denom + ( pow((Araw*thisBTerr),2) )/pow(thisBT,4)  );
+			}
+		    }
+		    
 		}
 		
 		return Asyms;
@@ -196,6 +229,26 @@ struct AllFCRunInfo{
 	    }
 	    fin.close(); 
 
+	    // Now read in the beam-target polarization values
+//17762   -0.589985   0.022188   -0.653924   0.022188
+
+	    ifstream btin( "../Analysis_Channel/Output_Data/All_NH3_PbPt.txt");
+
+	    while( getline( btin, line ) ){
+		int run;
+		double bt, bterr, btnorm, btnormerr, nmr, nmrerr;
+		stringstream sin(line);
+		sin >> run >> bt >> bterr >> btnorm >> btnormerr;
+		for( int i=0; i<totalRuns; i++ ){
+		    if( AllRuns[i].Run == run ){
+			nmr = RP.getOfflineTPol( run );
+			nmrerr = RP.getOfflineTPolErr( run );
+			AllRuns[i].SetBT( bt, bterr, btnorm, btnormerr, nmr, nmrerr );
+		    }
+		}
+	    }
+	    btin.close();
+
 	}
 
 	// Prints all the info
@@ -204,35 +257,48 @@ struct AllFCRunInfo{
 	}
 
 	// Returns a TGraphErrors object with the desired double-spin asymmetry plotted against the desired type of FC asymmetry
-	TGraphErrors* MakePlot( string Target, string Period, string BCA_Type, int Color=1, bool UseNorm=false ){
+	TGraphErrors* MakePlot( string Target, string Period, string BCA_Type, string useBT="NO", int Color=1, bool UseNorm=false ){
 	    int RunMin = 0; int RunMax = 0; // Bounds of potential run ranges to use for plotting
-	    if( Period == "Summer" ){ RunMin = 16128; RunMax = 16772; }
+	    if( Period == "Summer" || Period == "Su22" ){ RunMin = 16128; RunMax = 16772; }
+	    else if( Period == "Fall (Neg. Sol.)" || Period == "Fa22Neg" ){ RunMin = 16850; RunMax = 17184; }
+	    else if( Period == "Fall (Pos. Sol.)" || Period == "Fa22Pos" ){ RunMin = 17185; RunMax = 17450; }
+	    else if( Period == "Spring (Inb.)" || Period == "Sp23Inb" )   { RunMin = 17451; RunMax = 17768; }
 
 	    vector<double> BCA, ALL, ALL_Err;
 	    // Loop over and get the desired info
 	    for( auto Run : AllRuns ){
-	        vector<double> FC_Asyms = Run.FCAsymmetry( BCA_Type );
-		vector<double> ALL_Asym = Run.RawAsymmetry();
 
 		// Check the target with a target pass
 		bool TargetCheck = false;
 		string targ = Run.Target;
 
+		// Extra check to make sure that the BT information is only written for the case of a polarized target
+		//if( !(targ != "NH3" || targ != "ND3") ) useBT = "NO";
+
 		//if( Target == "Unpol" && ( targ == "F" || targ == "ET" || targ == "C" || targ == "CH2" || targ == "CD2" ) ) TargetCheck = true;
 		if( Target == "Unpol" && ( targ == "ET" || targ == "C" || targ == "CH2" || targ == "CD2" ) ) TargetCheck = true; // removed foil targets for now...
 		else TargetCheck = Target == targ; 
 
-		if( TargetCheck && Run.Run >= RunMin && Run.Run <= RunMax && FC_Asyms[0] != 0 ){
-		    // This vector holds the FC info. Ignore the second entry (the error) for now...
-		    BCA.push_back( FC_Asyms[0] );
+		if( TargetCheck && Run.Run >= RunMin && Run.Run <= RunMax ){
+	            
+		    vector<double> FC_Asyms = Run.FCAsymmetry( BCA_Type );
+		    vector<double> ALL_Asym = Run.RawAsymmetry( useBT );
 
 		    double all = ALL_Asym[0];
 		    if( UseNorm ) all = all - FC_Asyms[0]; 
 
-		    ALL.push_back( all );
-		    // FIXME: The error isn't scaled when subtracting the FC asym
-		    ALL_Err.push_back( ALL_Asym[1] );
-		    cout <<"Run "<< Run.Run << endl;
+		    // Extra check for a valid value
+		    if( all != 0 && FC_Asyms[0] != 0 ){
+		        // This vector holds the FC info. Ignore the second entry (the error) for now...
+		        BCA.push_back( FC_Asyms[0] );
+		        ALL.push_back( all );
+		        // FIXME: The error isn't scaled when subtracting the FC asym
+		        ALL_Err.push_back( ALL_Asym[1] );
+		        cout <<"Run "<< Run.Run << endl;
+		    }
+		    else{
+			cout <<"WARNING: Run "<< Run.Run <<" has a zero BSA.\n";
+		    }
 		}
 	    }
 
@@ -247,7 +313,7 @@ struct AllFCRunInfo{
 	}
 
 	// Creates a plot of all the FCup types drawn together
-	TCanvas* MakeAllFCPlots( string Target, string Period, string Version="All", string TitleExt="", double yMin=-0.01, double yMax=0.01 ){
+	TCanvas* MakeAllFCPlots( string Target, string Period, string useBT="NO", string Version="All", string TitleExt="", double yMin=-0.01, double yMax=0.01 ){
 
 	    // Used to track what the axis ranges should be
 	    //bool useUnpolTargets = !( Target == "NH3" or Target == "ND3" );	    
@@ -264,47 +330,57 @@ struct AllFCRunInfo{
 	    c->GetPad(1)->SetLeftMargin(0.18);
 	    c->GetPad(1)->SetRightMargin(0.02);
 
-	    auto gr_Gatedz = this->MakePlot( Target, Period, "Gated", 1, false );
+	    auto gr_Gatedz = this->MakePlot( Target, Period, "Gated", useBT, 1, false );
 	    r = gr_Gatedz->Fit("pol1","S","Q");
 	    gr_Gatedz->GetFunction("pol1")->SetLineColor(1);
 	    mg->Add( gr_Gatedz, "p" );
 	    stringstream leg_Gatedz; leg_Gatedz << "Gated A_{FC}, Slope = "<< setprecision(3) << r->Value(1) <<" #pm "<< r->Error(1);
 	    leg->AddEntry( gr_Gatedz, leg_Gatedz.str().c_str(), "p" );
+	    stringstream Chi2_leg_Gatedz; Chi2_leg_Gatedz << "Reduced #chi^{2} = "<< setprecision(3) << r->Chi2() / r->Ndf();
+	    leg->AddEntry( gr_Gatedz, Chi2_leg_Gatedz.str().c_str(), "p" );
 
 	    if( Version == "All" or Version == "EPICS_FCUP" ){
-		auto gr_EPICS_FCUPz = this->MakePlot( Target, Period, "EPICS_FCUP", 2, false );
+		auto gr_EPICS_FCUPz = this->MakePlot( Target, Period, "EPICS_FCUP", useBT, 2, false );
 	        r = gr_EPICS_FCUPz->Fit("pol1","S","Q");
 	        gr_EPICS_FCUPz->GetFunction("pol1")->SetLineColor(2);
 	        mg->Add( gr_EPICS_FCUPz, "p" );
 	        stringstream leg_EPICS_FCUPz; leg_EPICS_FCUPz << "EPICS_FCUP A_{FC}, Slope = "<< setprecision(3) << r->Value(1) <<" #pm "<< r->Error(1);
 	        leg->AddEntry( gr_EPICS_FCUPz, leg_EPICS_FCUPz.str().c_str(), "p" );
+		stringstream Chi2_leg_EPICS_FCUPz; Chi2_leg_EPICS_FCUPz << "Reduced #chi^{2} = "<< setprecision(3) << r->Chi2() / r->Ndf();
+		leg->AddEntry( gr_EPICS_FCUPz, Chi2_leg_EPICS_FCUPz.str().c_str(), "p" );
 	    }
 	    if( Version == "All" or Version == "EPICS_SLM" ){
-	        auto gr_EPICS_SLMz = this->MakePlot( Target, Period, "EPICS_SLM", 3, false );
+	        auto gr_EPICS_SLMz = this->MakePlot( Target, Period, "EPICS_SLM", useBT, 3, false );
 	        r = gr_EPICS_SLMz->Fit("pol1","S","Q");
 	        gr_EPICS_SLMz->GetFunction("pol1")->SetLineColor(3);
 	        mg->Add( gr_EPICS_SLMz, "p" );
 	        stringstream leg_EPICS_SLMz; leg_EPICS_SLMz << "EPICS_SLM A_{FC}, Slope = "<< setprecision(3) << r->Value(1) <<" #pm "<< r->Error(1);
 	        leg->AddEntry( gr_EPICS_SLMz, leg_EPICS_SLMz.str().c_str(), "p" );
+		stringstream Chi2_leg_EPICS_SLMz; Chi2_leg_EPICS_SLMz << "Reduced #chi^{2} = "<< setprecision(3) << r->Chi2() / r->Ndf();
+		leg->AddEntry( gr_EPICS_SLMz, Chi2_leg_EPICS_SLMz.str().c_str(), "p" );
 	    }
 	    if( Version == "All" or Version == "STRUCK_gated" ){
-	        auto gr_STRUCK_gatedz = this->MakePlot( Target, Period, "STRUCK_gated", 4, false );
+	        auto gr_STRUCK_gatedz = this->MakePlot( Target, Period, "STRUCK_gated", useBT, 4, false );
 	        r = gr_STRUCK_gatedz->Fit("pol1","S","Q");
 	        gr_STRUCK_gatedz->GetFunction("pol1")->SetLineColor(4);
 	        mg->Add( gr_STRUCK_gatedz, "p" );
 	        stringstream leg_STRUCK_gatedz; leg_STRUCK_gatedz << "STRUCK_gated A_{FC}, Slope = "<< setprecision(3) << r->Value(1) <<" #pm "<< r->Error(1);
 	        leg->AddEntry( gr_STRUCK_gatedz, leg_STRUCK_gatedz.str().c_str(), "p" );
+		stringstream Chi2_leg_STRUCK_gatedz; Chi2_leg_STRUCK_gatedz << "Reduced #chi^{2} = "<< setprecision(3) << r->Chi2() / r->Ndf();
+		leg->AddEntry( gr_STRUCK_gatedz, Chi2_leg_STRUCK_gatedz.str().c_str(), "p" );
 	    }
 	    if( Version == "All" or Version == "STRUCK_ungated" ){
-	        auto gr_STRUCK_ungatedz = this->MakePlot( Target, Period, "STRUCK_ungated", 6, false );
+	        auto gr_STRUCK_ungatedz = this->MakePlot( Target, Period, "STRUCK_ungated", useBT, 6, false );
 	        r = gr_STRUCK_ungatedz->Fit("pol1","S","Q");
 	        gr_STRUCK_ungatedz->GetFunction("pol1")->SetLineColor(6);
 	        mg->Add( gr_STRUCK_ungatedz, "p" );
 	        stringstream leg_STRUCK_ungatedz; leg_STRUCK_ungatedz << "STRUCK_ungated A_{FC}, Slope = "<< setprecision(3) << r->Value(1) <<" #pm "<< r->Error(1);
 	        leg->AddEntry( gr_STRUCK_ungatedz, leg_STRUCK_ungatedz.str().c_str(), "p" );
+		stringstream Chi2_leg_STRUCK_ungatedz; Chi2_leg_STRUCK_ungatedz << "Reduced #chi^{2} = "<< setprecision(3) << r->Chi2() / r->Ndf();
+		leg->AddEntry( gr_STRUCK_ungatedz, Chi2_leg_STRUCK_ungatedz.str().c_str(), "p" );
 	    }
 	    mg->SetTitle( string( Period +" A_{LU} vs. A_{FC} for "+ Target +" "+TitleExt+"; A_{FC}; A_{LU}").c_str() ); 
-	    mg->GetYaxis()->SetRangeUser( yMin, yMax );
+	    if( !(Target == "NH3" || Target == "ND3") ) mg->GetYaxis()->SetRangeUser( yMin, yMax );
 	    mg->Draw("ap"); leg->Draw("same");
 
 	    c->cd(2);
@@ -314,53 +390,104 @@ struct AllFCRunInfo{
 	    TMultiGraph* mgNorm = new TMultiGraph();
 	    TLegend* legNorm = new TLegend(0.18,0.7, 0.98, 0.9); legNorm->SetNColumns(2);
 
-	    auto gr_GatedNorm = this->MakePlot( Target, Period, "Gated", 1, true );
+	    auto gr_GatedNorm = this->MakePlot( Target, Period, "Gated", useBT, 1, true );
 	    r = gr_GatedNorm->Fit("pol1","S","Q");
 	    gr_GatedNorm->GetFunction("pol1")->SetLineColor(1);
 	    mgNorm->Add( gr_GatedNorm, "p" );
 	    stringstream legNorm_GatedNorm; legNorm_GatedNorm << "Norm Gated A_{FC}, Slope = "<< setprecision(3) << r->Value(1) <<" #pm "<< r->Error(1);
 	    legNorm->AddEntry( gr_GatedNorm, legNorm_GatedNorm.str().c_str(), "p" );
+	    stringstream Chi2_leg_GatedNorm; Chi2_leg_GatedNorm << "Reduced #chi^{2} = "<< setprecision(3) << r->Chi2() / r->Ndf();
+	    legNorm->AddEntry( gr_GatedNorm, Chi2_leg_GatedNorm.str().c_str(), "p" );
 
 	    if( Version == "All" or Version == "EPICS_FCUP" ){
-	        auto gr_EPICS_FCUPNorm = this->MakePlot( Target, Period, "EPICS_FCUP", 2, true );
+	        auto gr_EPICS_FCUPNorm = this->MakePlot( Target, Period, "EPICS_FCUP", useBT, 2, true );
 	        r = gr_EPICS_FCUPNorm->Fit("pol1","S","Q");
 	        gr_EPICS_FCUPNorm->GetFunction("pol1")->SetLineColor(2);
 	        mgNorm->Add( gr_EPICS_FCUPNorm, "p" );
 	        stringstream legNorm_EPICS_FCUPNorm; legNorm_EPICS_FCUPNorm << "EPICS_FCUP A_{FC}, Slope = "<< setprecision(3) << r->Value(1) <<" #pm "<< r->Error(1);
 	        legNorm->AddEntry( gr_EPICS_FCUPNorm, legNorm_EPICS_FCUPNorm.str().c_str(), "p" );
+	        stringstream Chi2_leg_EPICS_FCUPNorm; Chi2_leg_EPICS_FCUPNorm << "Reduced #chi^{2} = "<< setprecision(3) << r->Chi2() / r->Ndf();
+	        legNorm->AddEntry( gr_EPICS_FCUPNorm, Chi2_leg_EPICS_FCUPNorm.str().c_str(), "p" );
 	    }
 	    if( Version == "All" or Version == "EPICS_SLM" ){
-	        auto gr_EPICS_SLMNorm = this->MakePlot( Target, Period, "EPICS_SLM", 3, true );
+	        auto gr_EPICS_SLMNorm = this->MakePlot( Target, Period, "EPICS_SLM", useBT, 3, true );
 	        r = gr_EPICS_SLMNorm->Fit("pol1","S","Q");
 	        gr_EPICS_SLMNorm->GetFunction("pol1")->SetLineColor(3);
 	        mgNorm->Add( gr_EPICS_SLMNorm, "p" );
 	        stringstream legNorm_EPICS_SLMNorm; legNorm_EPICS_SLMNorm << "EPICS_SLM A_{FC}, Slope = "<< setprecision(3) << r->Value(1) <<" #pm "<< r->Error(1);
 	        legNorm->AddEntry( gr_EPICS_SLMNorm, legNorm_EPICS_SLMNorm.str().c_str(), "p" );
+	        stringstream Chi2_leg_EPICS_SLMNorm; Chi2_leg_EPICS_SLMNorm << "Reduced #chi^{2} = "<< setprecision(3) << r->Chi2() / r->Ndf();
+	        legNorm->AddEntry( gr_EPICS_SLMNorm, Chi2_leg_EPICS_SLMNorm.str().c_str(), "p" );
 	    }
 	    if( Version == "All" or Version == "STRUCK_gated" ){
-	        auto gr_STRUCK_gatedNorm = this->MakePlot( Target, Period, "STRUCK_gated", 4, true );
+	        auto gr_STRUCK_gatedNorm = this->MakePlot( Target, Period, "STRUCK_gated", useBT, 4, true );
 	        r = gr_STRUCK_gatedNorm->Fit("pol1","S","Q");
 	        gr_STRUCK_gatedNorm->GetFunction("pol1")->SetLineColor(4);
 	        mgNorm->Add( gr_STRUCK_gatedNorm, "p" );
 	        stringstream legNorm_STRUCK_gatedNorm; legNorm_STRUCK_gatedNorm << "STRUCK_gated A_{FC}, Slope = "<< setprecision(3) << r->Value(1) <<" #pm "<< r->Error(1);
 	        legNorm->AddEntry( gr_STRUCK_gatedNorm, legNorm_STRUCK_gatedNorm.str().c_str(), "p" );
+	        stringstream Chi2_leg_STRUCK_gatedNorm; Chi2_leg_STRUCK_gatedNorm << "Reduced #chi^{2} = "<< setprecision(3) << r->Chi2() / r->Ndf();
+	        legNorm->AddEntry( gr_STRUCK_gatedNorm, Chi2_leg_STRUCK_gatedNorm.str().c_str(), "p" );
 	    }
 	    if( Version == "All" or Version == "STRUCK_ungated" ){
-	        auto gr_STRUCK_ungatedNorm = this->MakePlot( Target, Period, "STRUCK_ungated", 6, true );
+	        auto gr_STRUCK_ungatedNorm = this->MakePlot( Target, Period, "STRUCK_ungated", useBT, 6, true );
 	        r = gr_STRUCK_ungatedNorm->Fit("pol1","S","Q");
 	        gr_STRUCK_ungatedNorm->GetFunction("pol1")->SetLineColor(6);
 	        mgNorm->Add( gr_STRUCK_ungatedNorm, "p" );
 	        stringstream legNorm_STRUCK_ungatedNorm; legNorm_STRUCK_ungatedNorm << "STRUCK_ungated A_{FC}, Slope = "<< setprecision(3) << r->Value(1) <<" #pm "<< r->Error(1);
 	        legNorm->AddEntry( gr_STRUCK_ungatedNorm, legNorm_STRUCK_ungatedNorm.str().c_str(), "p" );
+	        stringstream Chi2_leg_STRUCK_ungatedNorm; Chi2_leg_STRUCK_ungatedNorm << "Reduced #chi^{2} = "<< setprecision(3) << r->Chi2() / r->Ndf();
+	        legNorm->AddEntry( gr_STRUCK_ungatedNorm, Chi2_leg_STRUCK_ungatedNorm.str().c_str(), "p" );
 	    }
 
 	    mgNorm->SetTitle( string( Period +" A_{norm} vs. A_{FC} for "+ Target +" "+TitleExt+"; A_{FC}; A_{norm}").c_str() ); 
-	    mgNorm->GetYaxis()->SetRangeUser( yMin, yMax );
+	    if( !(Target == "NH3" || Target == "ND3") ) mgNorm->GetYaxis()->SetRangeUser( yMin, yMax );
 	    mgNorm->Draw("ap"); legNorm->Draw("same");
 
 	    return c;
 	}
 };
+
+// This function creates a set of plots for a given set of runs
+void Create_All_vs_AFC_Plots( RunPeriod& RP, string Target, string Period, string useBT, int HWPstatus, int TPolSign, bool useQA=false ){
+
+    string Title;
+    if( Period == "Su22" ) Title = "Summer";
+    else if( Period == "Fa22Neg" ) Title = "Fall (Neg. Sol.)";
+    else if( Period == "Fa22Pos" ) Title = "Fall (Pos. Sol.)";
+    else if( Period == "Sp23Inb" ) Title = "Spring (Inb.)";
+
+    vector<int> Runs_To_Plot = RP.getRunsForHWPandTPol( Period, Target, HWPstatus, TPolSign );
+
+    cout <<"Target = "<< Target <<", HWP = "<< HWPstatus <<", TPol ~ "<< TPolSign <<", Use QA = " << useQA <<"\n";
+    string fileExt, titleExt;
+    if( !useQA ){ fileExt = "_NoQA"; titleExt = "(No QA)"; }
+
+    string HWP = "NA";
+    if( HWPstatus == 1 ) HWP = "IN";
+    else if( HWPstatus == 0 ) HWP = "OUT";
+
+    string TPOL = "Unpol";
+    if( TPolSign == 1 ) TPOL = "Pos";
+    else if( TPolSign == -1 ) TPOL = "Neg";
+
+    AllFCRunInfo RunInfo; 
+    RunInfo.SetRunInfo( RP, Runs_To_Plot, useQA );
+
+    auto Plotted_Runs_v1 = RunInfo.MakeAllFCPlots( Target, Title, useBT, "EPICS_FCUP", titleExt );
+    Plotted_Runs_v1->Print( string("PDF_Plots/"+ Target +"_"+ Period +"_"+ HWP +"_"+ TPOL +"_"+ useBT + fileExt +".pdf(").c_str() );
+
+    auto Plotted_Runs_v2 = RunInfo.MakeAllFCPlots( Target, Title, useBT, "EPICS_SLM", titleExt );
+    Plotted_Runs_v2->Print( string("PDF_Plots/"+ Target +"_"+ Period +"_"+ HWP +"_"+ TPOL +"_"+ useBT + fileExt +".pdf").c_str() );
+
+    auto Plotted_Runs_v3 = RunInfo.MakeAllFCPlots( Target, Title, useBT, "STRUCK_gated", titleExt );
+    Plotted_Runs_v3->Print( string("PDF_Plots/"+ Target +"_"+ Period +"_"+ HWP +"_"+ TPOL +"_"+ useBT + fileExt +".pdf").c_str() );
+
+    auto Plotted_Runs_v4 = RunInfo.MakeAllFCPlots( Target, Title, useBT, "STRUCK_ungated", titleExt );
+    Plotted_Runs_v4->Print( string("PDF_Plots/"+ Target +"_"+ Period +"_"+ HWP +"_"+ TPOL +"_"+ useBT + fileExt +".pdf)").c_str() );
+
+}
+
 
 void Charge_Asymmetry_Check( ){
 
@@ -368,38 +495,60 @@ void Charge_Asymmetry_Check( ){
 	
 	RunPeriod RP;
 	vector<int> AllSummerRuns = RP.getDataSet("Su22","Neg","Neg");
-        //vector<int> getRunsForHWPandTPol( string DataSet, string Target, int HWPstatus, int TPolSign ){
-        vector<int> AllHWPInRuns = RP.getRunsForHWPandTPol( "Su22", "Unpol", 1, 0 );
-	//for(int r : AllHWPInRuns ) cout << r << endl;
+	// Plot the Summer NH3 data
+	bool useQA = true;
 
-	AllFCRunInfo AllData, AllDataNoQA; 
-	AllData.SetRunInfo( RP, AllSummerRuns );
-	AllDataNoQA.SetRunInfo( RP, AllSummerRuns, false );
+	string Period = "Su22";
+	string useBT = "NO";
 
-	// Make a plot of the summer carbon data with QA cuts applied
-	auto Plt_C_v1 = AllData.MakeAllFCPlots( "C", "Summer", "EPICS_FCUP" );     Plt_C_v1->Print("PDF_Plots/Summer_Carbon_FCup.pdf(");
-	auto Plt_C_v2 = AllData.MakeAllFCPlots( "C", "Summer", "EPICS_SLM" );      Plt_C_v2->Print("PDF_Plots/Summer_Carbon_FCup.pdf");
-	auto Plt_C_v3 = AllData.MakeAllFCPlots( "C", "Summer", "STRUCK_gated" );   Plt_C_v3->Print("PDF_Plots/Summer_Carbon_FCup.pdf");
-	auto Plt_C_v4 = AllData.MakeAllFCPlots( "C", "Summer", "STRUCK_ungated" ); Plt_C_v4->Print("PDF_Plots/Summer_Carbon_FCup.pdf)");
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 1,  1, useQA );
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 0,  1, useQA );
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 1, -1, useQA );
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 0, -1, useQA );
 
-	// Do the same without QA cuts
-	auto NoQA_C_v1 = AllDataNoQA.MakeAllFCPlots( "C", "Summer", "EPICS_FCUP", "(No QA)" );     NoQA_C_v1->Print("PDF_Plots/Summer_Carbon_FCup_NoQA.pdf(");
-	auto NoQA_C_v2 = AllDataNoQA.MakeAllFCPlots( "C", "Summer", "EPICS_SLM", "(No QA)" );      NoQA_C_v2->Print("PDF_Plots/Summer_Carbon_FCup_NoQA.pdf");
-	auto NoQA_C_v3 = AllDataNoQA.MakeAllFCPlots( "C", "Summer", "STRUCK_gated", "(No QA)" );   NoQA_C_v3->Print("PDF_Plots/Summer_Carbon_FCup_NoQA.pdf");
-	auto NoQA_C_v4 = AllDataNoQA.MakeAllFCPlots( "C", "Summer", "STRUCK_ungated", "(No QA)" ); NoQA_C_v4->Print("PDF_Plots/Summer_Carbon_FCup_NoQA.pdf)");
+	Create_All_vs_AFC_Plots( RP, "ND3", Period, useBT, 1,  1, useQA );
+	Create_All_vs_AFC_Plots( RP, "ND3", Period, useBT, 0,  1, useQA );
+	Create_All_vs_AFC_Plots( RP, "ND3", Period, useBT, 1, -1, useQA );
+	Create_All_vs_AFC_Plots( RP, "ND3", Period, useBT, 0, -1, useQA );
 
-	// Make a plot of the summer carbon data with QA cuts applied
-	auto Plt_Unpol_v1 = AllData.MakeAllFCPlots( "Unpol", "Summer", "EPICS_FCUP" );     Plt_Unpol_v1->Print("PDF_Plots/Summer_Unpol_FCup.pdf(");
-	auto Plt_Unpol_v2 = AllData.MakeAllFCPlots( "Unpol", "Summer", "EPICS_SLM" );      Plt_Unpol_v2->Print("PDF_Plots/Summer_Unpol_FCup.pdf");
-	auto Plt_Unpol_v3 = AllData.MakeAllFCPlots( "Unpol", "Summer", "STRUCK_gated" );   Plt_Unpol_v3->Print("PDF_Plots/Summer_Unpol_FCup.pdf");
-	auto Plt_Unpol_v4 = AllData.MakeAllFCPlots( "Unpol", "Summer", "STRUCK_ungated" ); Plt_Unpol_v4->Print("PDF_Plots/Summer_Unpol_FCup.pdf)");
 
-	// Do the same without QA cuts
-	auto NoQA_Unpol_v1 = AllDataNoQA.MakeAllFCPlots( "Unpol", "Summer", "EPICS_FCUP", "(No QA)" );     NoQA_Unpol_v1->Print("PDF_Plots/Summer_Unpol_FCup_NoQA.pdf(");
-	auto NoQA_Unpol_v2 = AllDataNoQA.MakeAllFCPlots( "Unpol", "Summer", "EPICS_SLM", "(No QA)" );      NoQA_Unpol_v2->Print("PDF_Plots/Summer_Unpol_FCup_NoQA.pdf");
-	auto NoQA_Unpol_v3 = AllDataNoQA.MakeAllFCPlots( "Unpol", "Summer", "STRUCK_gated", "(No QA)" );   NoQA_Unpol_v3->Print("PDF_Plots/Summer_Unpol_FCup_NoQA.pdf");
-	auto NoQA_Unpol_v4 = AllDataNoQA.MakeAllFCPlots( "Unpol", "Summer", "STRUCK_ungated", "(No QA)" ); NoQA_Unpol_v4->Print("PDF_Plots/Summer_Unpol_FCup_NoQA.pdf)");
+	// Create the unpolarized plots
+	Create_All_vs_AFC_Plots( RP, "Unpol", Period, useBT, 1, 0, useQA );
 
+/*
+	// Use the unnormalized values of PbPt
+	useBT = "Raw"; 
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 1,  1, useQA );
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 0,  1, useQA );
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 1, -1, useQA );
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 0, -1, useQA );
+
+	// Use the normalized values of PbPt
+	useBT = "Norm"; 
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 1,  1, useQA );
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 0,  1, useQA );
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 1, -1, useQA );
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 0, -1, useQA );
+
+	// Use the unnormalized values of PbPt
+	useBT = "NMR"; 
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 1,  1, useQA );
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 0,  1, useQA );
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 1, -1, useQA );
+	Create_All_vs_AFC_Plots( RP, "NH3", Period, useBT, 0, -1, useQA );
+*/
+/*
+	cout <<"Positive NH3, HWP in...\n";
+	AllFCRunInfo NH3_Pos_In; NH3_Pos_In.SetRunInfo( RP, NH3_Tpos_HWPInRuns, false );
+	auto NH3_Pos_In_Plt_v1 = NH3_Pos_In.MakeAllFCPlots( "NH3", "Summer", "EPICS_FCUP", "(No QA)" );     NH3_Pos_In_Plt_v1->Print("PDF_Plots/NH3_Pos_In_NoQA.pdf(");
+	auto NH3_Pos_In_Plt_v2 = NH3_Pos_In.MakeAllFCPlots( "NH3", "Summer", "EPICS_SLM", "(No QA)" );      NH3_Pos_In_Plt_v2->Print("PDF_Plots/NH3_Pos_In_NoQA.pdf");
+	auto NH3_Pos_In_Plt_v3 = NH3_Pos_In.MakeAllFCPlots( "NH3", "Summer", "STRUCK_gated", "(No QA)" );   NH3_Pos_In_Plt_v3->Print("PDF_Plots/NH3_Pos_In_NoQA.pdf");
+	auto NH3_Pos_In_Plt_v4 = NH3_Pos_In.MakeAllFCPlots( "NH3", "Summer", "STRUCK_ungated", "(No QA)" ); NH3_Pos_In_Plt_v4->Print("PDF_Plots/NH3_Pos_In_NoQA.pdf)");
+*/
+
+	//AllFCRunInfo NH3_Neg_In; NH3_Neg_In.SetRunInfo( RP, NH3_Tneg_HWPInRuns, false );
+	//AllFCRunInfo NH3_Pos_Out; NH3_Pos_Out.SetRunInfo( RP, NH3_Tpos_HWPOutRuns, false );
+	//AllFCRunInfo NH3_Neg_Out; NH3_Neg_Out.SetRunInfo( RP, NH3_Tneg_HWPOutRuns, false );
 
 	// Loop over all HWP and Tpol configs for NH3
 	vector<int> Target_Pols = {-1,1};

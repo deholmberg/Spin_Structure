@@ -720,6 +720,7 @@ struct PbPt{
 		// Vary the dilution factor by a gaussian smear if a systematic study is being done
 		if( useGaussSmear ) thisDF_el = GaussianSmear( EI.DF_el, EI.DF_el_err );
 
+		//FIXME: Add the luminosity ratio to the N_M terms
 		if( RunNumber > 17185 && RunNumber < 17450 ) corr_factor = -1.0;
 		PNF_num += thisDF_el * (EI.N_P - EI.N_M) * EI.A_el * PbPt * corr_factor;
 		PNF_den += pow( thisDF_el, 2 ) * (EI.N_P + EI.N_M) * pow( (EI.A_el * PbPt ), 2 );

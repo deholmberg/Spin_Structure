@@ -514,8 +514,9 @@ class RunPeriod{
 		string line; getline( fin2, line ); // throw away header row
 		while(getline(fin2,line)){
 		    stringstream sin(line);
-		    int run, cell; string species; double avgOnline, avgOffline, avgOfflineErr, runDone;
-		    sin >> run >> species >> cell >> avgOnline >> avgOffline >> avgOfflineErr >> runDone;
+		    int run, cell; string species; double avgOnline, avgOffline, avgOfflineErr, runDose;
+		    sin >> run >> species >> cell >> avgOnline >> avgOffline >> avgOfflineErr >> runDose;
+//run	species	cell	charge_avg_online	charge_avg_offline	charge_avg_offline_err	run_dose(Pe/cm2)
 		    // Now slot into the appropriate run
 		    for(size_t i=0; i<Runs.size(); i++){
 			if(Runs[i].getRunNumber() == run){
